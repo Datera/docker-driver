@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/datera/driver/datera-volume-driver/datera"
+	"github.com/docker/go-plugins-helpers/volume"
 )
 
 type volumeEntry struct {
 	name        string
-	fsType	    string
+	fsType      string
 	connections int
 }
 
@@ -72,12 +72,12 @@ func (d dateraDriver) Create(r volume.Request) volume.Response {
 		if !exist {
 			log.Printf("Sending create-volume to datera server.")
 			if err := d.dateraClient.CreateVolume(
-							r.Name,
-							size,
-							uint8(replica),
-							template,
-							maxIops,
-							maxBW); err != nil {
+				r.Name,
+				size,
+				uint8(replica),
+				template,
+				maxIops,
+				maxBW); err != nil {
 				return volume.Response{Err: err.Error()}
 			}
 		}
