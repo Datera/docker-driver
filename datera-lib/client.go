@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"strconv"
 )
 
 const (
@@ -147,42 +147,42 @@ func (r Client) volumes() ([]volume, error) {
 	for k, v := range appInstance {
 		log.Printf("key: ", k)
 		log.Printf("Value:\n", v)
-		
+
 		storageInstances := v.(map[string]interface{})
 		storage := storageInstances["storage_instances"].(map[string]interface{})
 
 		for k1, v1 := range storage {
 			log.Printf("key1: ", k1)
 			log.Printf("Value1:\n", v1)
-			
+
 			storageInstance := v1.(map[string]interface{})
-			
+
 			targetUUID := storageInstance["uuid"].(string)
 			log.Printf("targetUUID = ", targetUUID)
-			
+
 			access := storageInstance["access"].(map[string]interface{})
 			log.Printf("access = ", access)
-			
+
 			storageIP := access["ips"].([]interface{})
 			log.Printf("storageIP =", storageIP[0].(string))
-			
+
 			storageIQN := access["iqn"].(string)
 			log.Printf("storageIQN = ", storageIQN)
-			
+
 			volumes := storageInstance["volumes"].(map[string]interface{})
 			log.Printf("volumes = ", volumes)
-			
+
 			for vol_key, vol_val := range volumes {
 				var volumeEntry volume
 				log.Printf("vol_key: ", vol_key)
 				log.Printf("vol_val: ", vol_val)
-				
+
 				volumeData := vol_val.(map[string]interface{})
-				
+
 				volumeName := volumeData["name"].(string)
 				log.Printf("volumeName = ", volumeName)
 				volumeEntry.Name = volumeName
-				
+
 				volumeUUID := volumeData["uuid"].(string)
 				log.Printf("volumeUUID = ", volumeUUID)
 				volumeEntry.Uuid = volumeUUID
@@ -190,11 +190,11 @@ func (r Client) volumes() ([]volume, error) {
 				volumeStatus := volumeData["op_state"].(string)
 				log.Printf("volumeStatus = ", volumeStatus)
 				volumeEntry.Status = volumeStatus
-				
+
 				volumeSize := volumeData["size"].(float64)
 				log.Printf("volumeSize = ", volumeSize)
 				volumeEntry.Size = int(volumeSize)
-				
+
 				volumeReplica := volumeData["replica_count"].(float64)
 				log.Printf("volumeReplica = ", volumeReplica)
 				volumeEntry.Replica = int(volumeReplica)
@@ -202,7 +202,7 @@ func (r Client) volumes() ([]volume, error) {
 				outVolumes = append(outVolumes, volumeEntry)
 				log.Printf("volume [", volumeEntry, "]")
 			}
-			
+
 			storage_name := storageInstance["name"].(string)
 			log.Printf("storage name = ", storage_name)
 		}
@@ -212,12 +212,12 @@ func (r Client) volumes() ([]volume, error) {
 }
 
 func (r Client) CreateVolume(
-			name string,
-			size uint64,
-			replica uint8,
-			template string,
-			maxIops uint64,
-			maxBW uint64) error {
+	name string,
+	size uint64,
+	replica uint8,
+	template string,
+	maxIops uint64,
+	maxBW uint64) error {
 	authErr := r.Login("admin", "password")
 	if authErr != nil {
 		log.Println("Authentication Failure.")
@@ -288,7 +288,7 @@ func (r Client) DetachVolume(name string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Println("response Status:", resp.Status)
 	fmt.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -361,39 +361,39 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	for k1, v1 := range storage {
 		fmt.Println("key1: ", k1)
 		fmt.Println("Value1:\n", v1)
-		
+
 		storageInstance := v1.(map[string]interface{})
-		
+
 		access := storageInstance["access"].(map[string]interface{})
 		log.Printf("access = ", access)
-		
+
 		storageIP := access["ips"].([]interface{})
 		log.Printf("storageIP =", storageIP[0].(string))
 		portal = storageIP[0].(string)
-		
+
 		storageIQN := access["iqn"].(string)
 		log.Printf("storageIQN = ", storageIQN)
 		iqn = storageIQN
-		
+
 		volumes := storageInstance["volumes"].(map[string]interface{})
 		log.Printf("volumes = ", volumes)
-		
+
 		for vol_key, vol_val := range volumes {
 			log.Println("vol_key: ", vol_key)
 			log.Println("vol_val: ", vol_val)
-			
+
 			volumeData := vol_val.(map[string]interface{})
-			
+
 			volumeName := volumeData["name"].(string)
 			log.Printf("volumeName = ", volumeName)
-			
+
 			volumeUUID := volumeData["uuid"].(string)
 			log.Printf("volumeUUID = ", volumeUUID)
 			volUUID = volumeUUID
 
 			break
 		}
-		
+
 		storage_name := storageInstance["name"].(string)
 		fmt.Println("storage name = ", storage_name)
 	}
@@ -418,13 +418,13 @@ func (r Client) MountVolume(name string, destination string, fsType string) erro
 	}
 
 	if out, err :=
-		 exec.Command("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
+		exec.Command("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
 		log.Println("Unable to discover targets at portal %s. Error output [%s]", portal, string(out))
 		return err
 	}
 
 	if out, err :=
-		 exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
+		exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
 		log.Println("Unable to login to target %s at portal %s. Error output [%s]",
 			iqn,
 			portal,
@@ -468,29 +468,29 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 		fsType,
 		mountOptions)
 
-	exec.Command("fsck", "-a", sourceDisk).CombinedOutput();
+	exec.Command("fsck", "-a", sourceDisk).CombinedOutput()
 
 	if out, err :=
-		 exec.Command("mount", "-t", fsType,
-				 "-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
+		exec.Command("mount", "-t", fsType,
+			"-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
 		log.Println("mount failed for volume [%s]. output [%s], error [%s]", sourceDisk, out, err)
 		log.Println("Checking for disk formatting [%s]", sourceDisk)
 
-		if (fsType == "ext4") {
+		if fsType == "ext4" {
 			log.Println("ext4 block fsType [%s]", fsType)
 			_, err =
-			exec.Command("mkfs."+fsType, "-E",
+				exec.Command("mkfs."+fsType, "-E",
 					"lazy_itable_init=0,lazy_journal_init=0", "-F", sourceDisk).CombinedOutput()
 		} else {
 			log.Println("fsType [%s]", fsType)
 			_, err =
-			exec.Command("mkfs."+fsType, sourceDisk).CombinedOutput()
+				exec.Command("mkfs."+fsType, sourceDisk).CombinedOutput()
 		}
 		if err == nil {
 			log.Println("Done with formatting, mounting again.")
 			if _, err := exec.Command("mount", "-t", fsType,
-					"-o", strings.Join(mountOptions, ","),
-					sourceDisk, destination).CombinedOutput(); err != nil {
+				"-o", strings.Join(mountOptions, ","),
+				sourceDisk, destination).CombinedOutput(); err != nil {
 				log.Println("Error in mounting. Error = ", err)
 				return err
 			} else {
@@ -571,7 +571,7 @@ func (r Client) UnmountVolume(name string, destination string) error {
 	}
 
 	if out, err :=
-		 exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
+		exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
 		log.Println("Unable to login to target %s at portal %s. Error output [%s]",
 			iqn,
 			portal,
@@ -586,11 +586,11 @@ func (r Client) UnmountVolume(name string, destination string) error {
 
 func responseCheck(resp *http.Response) error {
 	var p response
-/*
-	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
-		return err
-	}
-*/
+	/*
+		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+			return err
+		}
+	*/
 	if !p.Ok {
 		return fmt.Errorf(p.Err)
 	}
@@ -599,8 +599,8 @@ func responseCheck(resp *http.Response) error {
 }
 
 func apiRequest(restUrl string, method string, body []byte) (*http.Response, error) {
-   	log.Printf("apiRequest restUrl [%s], method [%s], body [%s]",
-		   restUrl, method, body)
+	log.Printf("apiRequest restUrl [%s], method [%s], body [%s]",
+		restUrl, method, body)
 	req, err := http.NewRequest(method, restUrl, bytes.NewBuffer(body))
 	req.Header.Set("auth-token", authToken)
 	req.Header.Set("Content-Type", "application/json")
