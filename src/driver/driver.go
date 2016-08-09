@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/datera/driver/datera-volume-driver/datera"
+	"datera-lib"
 	"github.com/docker/go-plugins-helpers/volume"
 )
 
@@ -133,7 +133,7 @@ func (d dateraDriver) Path(r volume.Request) volume.Response {
 	return volume.Response{Mountpoint: d.mountpoint(r.Name)}
 }
 
-func (d dateraDriver) Mount(r volume.Request) volume.Response {
+func (d dateraDriver) Mount(r volume.MountRequest) volume.Response {
 	d.m.Lock()
 	defer d.m.Unlock()
 	m := d.mountpoint(r.Name)
@@ -168,7 +168,7 @@ func (d dateraDriver) Mount(r volume.Request) volume.Response {
 	return volume.Response{Mountpoint: m}
 }
 
-func (d dateraDriver) Unmount(r volume.Request) volume.Response {
+func (d dateraDriver) Unmount(r volume.UnmountRequest) volume.Response {
 	d.m.Lock()
 	defer d.m.Unlock()
 	m := d.mountpoint(r.Name)
@@ -186,6 +186,11 @@ func (d dateraDriver) Unmount(r volume.Request) volume.Response {
 	}
 
 	return volume.Response{}
+}
+
+func (d dateraDriver) Capabilities(r volume.Request) volume.Response {
+	// TODO(mss): Add real backend capabilites to this shim
+	return volume.Response{Capabilities: volume.Capability{Scope: "test"}}
 }
 
 func (d *dateraDriver) mountpoint(name string) string {
