@@ -71,11 +71,12 @@ func (r Client) Login(name string, password string) error {
 	url := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(loginPath))
 	fmt.Println(url)
 
-	var jsonStr = []byte(`
+	var jsonStr = []byte(
+		fmt.Sprintf(`
 			    {
-				"name": "admin",
-				"password": "password"
-			    }`)
+				"name": "%s",
+				"password": "%s"
+			    }`, name, password))
 	authToken = ""
 	resp, err := apiRequest(url, "PUT", jsonStr)
 	defer resp.Body.Close()
