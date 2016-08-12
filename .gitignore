@@ -28,3 +28,5 @@ _testmain.go
 
 *.com*
 *.org*
+datera-driver
+bin/
