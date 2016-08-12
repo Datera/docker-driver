@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -19,6 +20,9 @@ var (
 	restAddress = flag.String("datera-cluster", "", "URL to datera api")
 	dateraBase  = flag.String("datera-base", "/mnt/datera", "Base directory where volumes are created in the cluster")
 	root        = flag.String("root", defaultDir, "datera volumes root directory")
+	username	= flag.String("username", "", "Username for Datera backend account")
+	password	= flag.String("password", "", "Password for Datera backend account")
+
 )
 
 func main() {
@@ -33,7 +37,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	d := newDateraDriver(*root, *restAddress, *dateraBase)
+	// Create log file
+	f, err := os.OpenFile("datera_docker_driver.log", os.O_APPEND | os.O_CREATE | os.O_RDWR, 0666)
+	if err != nil {
+	  fmt.Printf("error opening file: %v", err)
+	}
+	defer f.Close()
+	log.SetOutput(f)
+
+	d := newDateraDriver(*root, *restAddress, *dateraBase, *username, *password)
 	h := volume.NewHandler(d)
 	fmt.Printf("listening on %s\n", socketAddress)
 	fmt.Println(h.ServeUnix("root", "datera"))

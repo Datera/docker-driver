@@ -12,6 +12,11 @@ import (
 	"github.com/docker/go-plugins-helpers/volume"
 )
 
+const (
+	DefaultFS = "ext4"
+	DefaultReplicas = 3
+)
+
 type volumeEntry struct {
 	name        string
 	fsType      string
@@ -25,18 +30,30 @@ type dateraDriver struct {
 	m            *sync.Mutex
 }
 
-func newDateraDriver(root, restAddress, dateraBase string) dateraDriver {
+func newDateraDriver(root, restAddress, dateraBase, username, password string) dateraDriver {
 	d := dateraDriver{
 		root:    root,
 		volumes: map[string]*volumeEntry{},
 		m:       &sync.Mutex{},
 	}
 	if len(restAddress) > 0 {
-		d.dateraClient = datera.NewClient(restAddress, dateraBase)
+		d.dateraClient = datera.NewClient(restAddress, dateraBase, username, password)
 	}
 	return d
 }
 
+
+// Create creates a volume on the configured Datera backend
+// 
+// Specified using `--opt key=value` in the docker volume create command
+//
+// Available Options:
+//	size
+//	replica -- Default: 3
+//  template
+//  fsType -- Default: ext4
+//  maxIops
+//  maxBW
 func (d dateraDriver) Create(r volume.Request) volume.Response {
 	log.Printf("Creating volume %s\n", r.Name)
 	d.m.Lock()
@@ -44,6 +61,7 @@ func (d dateraDriver) Create(r volume.Request) volume.Response {
 	m := d.mountpoint(r.Name)
 	log.Printf("mountpoint for %s is [%s]", r.Name, m)
 	volumeOptions := r.Options
+	log.Printf("Volume Options: %s", volumeOptions)
 	size, _ := strconv.ParseUint(volumeOptions["size"], 10, 64)
 	replica, _ := strconv.ParseUint(volumeOptions["replica"], 10, 8)
 	template := volumeOptions["template"]
@@ -51,14 +69,20 @@ func (d dateraDriver) Create(r volume.Request) volume.Response {
 	maxIops, _ := strconv.ParseUint(volumeOptions["maxIops"], 10, 64)
 	maxBW, _ := strconv.ParseUint(volumeOptions["maxBW"], 10, 64)
 
+	// Set default filesystem to ext4
 	if len(fsType) == 0 {
-		fsType = "ext4"
+		log.Println("Using default filesystem value of %s", DefaultReplicas)
+		fsType = DefaultFS
 	}
+
+	// Set default replicas to 3
+	if replica == 0 {
+		log.Println("Using default replica value of %s", DefaultReplicas)
+		replica = DefaultReplicas
+	}
+
 	d.volumes[m] = &volumeEntry{name: r.Name, fsType: fsType, connections: 0}
 
-	log.Println("template [", template, "]")
-	log.Printf("size %d, replica %d", size, replica)
-	log.Printf("template [%s], maxIops %d, maxBW %d", template, maxIops, maxBW)
 	volEntry, ok := d.volumes[m]
 	log.Printf("volEntry = [%s], ok = [%d]", volEntry, ok)
 

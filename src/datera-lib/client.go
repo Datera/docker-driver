@@ -60,10 +60,12 @@ type volumeResponse struct {
 type Client struct {
 	addr string
 	base string
+	username string
+	password string
 }
 
-func NewClient(addr string, base string) *Client {
-	return &Client{addr, base}
+func NewClient(addr, base, username, password string) *Client {
+	return &Client{addr, base, username, password}
 }
 
 func (r Client) Login(name string, password string) error {
@@ -121,7 +123,7 @@ func (r Client) VolumeExist(name string) (bool, error) {
 }
 
 func (r Client) volumes() ([]volume, error) {
-	authErr := r.Login("admin", "password")
+	authErr := r.Login(r.username, r.password)
 	if authErr != nil {
 		log.Println("Authentication Failure.")
 		return nil, authErr
@@ -219,7 +221,7 @@ func (r Client) CreateVolume(
 	template string,
 	maxIops uint64,
 	maxBW uint64) error {
-	authErr := r.Login("admin", "password")
+	authErr := r.Login(r.username, r.password)
 	if authErr != nil {
 		log.Println("Authentication Failure.")
 		return authErr
@@ -301,7 +303,7 @@ func (r Client) DetachVolume(name string) error {
 
 func (r Client) StopVolume(name string) error {
 	log.Println("StopVolume invoked for ", name)
-	authErr := r.Login("admin", "password")
+	authErr := r.Login(r.username, r.password)
 	if authErr != nil {
 		fmt.Println("Authentication Failure.")
 		return authErr
@@ -323,7 +325,7 @@ func (r Client) StopVolume(name string) error {
 
 func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	log.Printf("GetIQNandPortal invoked for [", name, "]")
-	authErr := r.Login("admin", "password")
+	authErr := r.Login(r.username, r.password)
 	if authErr != nil {
 		fmt.Println("Authentication Failure.")
 		return "", "", "", authErr
