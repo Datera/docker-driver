@@ -23,28 +23,42 @@ type volumeEntry struct {
 	connections int
 }
 
-type dateraDriver struct {
+// Need to require interface instead of DateraClient directly
+// so we can mock DateraClient out more easily
+type ClientInterface interface {
+	VolumeExist(string)											(bool, error)
+	CreateVolume(string, uint64, uint8, string, uint64, uint64)	 error
+	StopVolume(string)											 error
+	MountVolume(string, string, string)							 error
+	UnmountVolume(string, string)								 error
+}
+
+type DateraDriver struct {
 	root         string
-	dateraClient *datera.Client
+	DateraClient ClientInterface
 	volumes      map[string]*volumeEntry
 	m            *sync.Mutex
 }
 
-func newDateraDriver(root, restAddress, dateraBase, username, password string) dateraDriver {
-	d := dateraDriver{
+func NewDateraDriver(root, restAddress, dateraBase, username, password string) DateraDriver {
+	d := DateraDriver{
 		root:    root,
 		volumes: map[string]*volumeEntry{},
 		m:       &sync.Mutex{},
 	}
 	if len(restAddress) > 0 {
-		d.dateraClient = datera.NewClient(restAddress, dateraBase, username, password)
+		d.DateraClient = datera.NewClient(restAddress, dateraBase, username, password)
 	}
 	return d
 }
 
+func (d DateraDriver) GetVolumeMap() map[string]*volumeEntry {
+	return d.volumes
+}
+
 
 // Create creates a volume on the configured Datera backend
-// 
+//
 // Specified using `--opt key=value` in the docker volume create command
 //
 // Available Options:
@@ -54,7 +68,7 @@ func newDateraDriver(root, restAddress, dateraBase, username, password string) d
 //  fsType -- Default: ext4
 //  maxIops
 //  maxBW
-func (d dateraDriver) Create(r volume.Request) volume.Response {
+func (d DateraDriver) Create(r volume.Request) volume.Response {
 	log.Printf("Creating volume %s\n", r.Name)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -86,16 +100,16 @@ func (d dateraDriver) Create(r volume.Request) volume.Response {
 	volEntry, ok := d.volumes[m]
 	log.Printf("volEntry = [%s], ok = [%d]", volEntry, ok)
 
-	if d.dateraClient != nil {
+	if d.DateraClient != nil {
 		log.Printf("Checking for existing volume [%s]", r.Name)
-		exist, err := d.dateraClient.VolumeExist(r.Name)
+		exist, err := d.DateraClient.VolumeExist(r.Name)
 		if err != nil {
 			return volume.Response{Err: err.Error()}
 		}
 
 		if !exist {
 			log.Printf("Sending create-volume to datera server.")
-			if err := d.dateraClient.CreateVolume(
+			if err := d.DateraClient.CreateVolume(
 				r.Name,
 				size,
 				uint8(replica),
@@ -109,7 +123,7 @@ func (d dateraDriver) Create(r volume.Request) volume.Response {
 	return volume.Response{}
 }
 
-func (d dateraDriver) Remove(r volume.Request) volume.Response {
+func (d DateraDriver) Remove(r volume.Request) volume.Response {
 	log.Printf("Removing volume %s\n", r.Name)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -119,8 +133,8 @@ func (d dateraDriver) Remove(r volume.Request) volume.Response {
 	if s, ok := d.volumes[m]; ok {
 		log.Printf("Remove: conection count ", s.connections)
 		if s.connections <= 1 {
-			if d.dateraClient != nil {
-				if err := d.dateraClient.StopVolume(r.Name); err != nil {
+			if d.DateraClient != nil {
+				if err := d.DateraClient.StopVolume(r.Name); err != nil {
 					return volume.Response{Err: err.Error()}
 				}
 			}
@@ -130,7 +144,7 @@ func (d dateraDriver) Remove(r volume.Request) volume.Response {
 	return volume.Response{}
 }
 
-func (d dateraDriver) List(r volume.Request) volume.Response {
+func (d DateraDriver) List(r volume.Request) volume.Response {
 	log.Printf("Listing volumes: \n")
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -142,7 +156,7 @@ func (d dateraDriver) List(r volume.Request) volume.Response {
 	return volume.Response{Volumes: vols}
 }
 
-func (d dateraDriver) Get(r volume.Request) volume.Response {
+func (d DateraDriver) Get(r volume.Request) volume.Response {
 	log.Printf("Get volumes: %s", r.Name)
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -153,11 +167,11 @@ func (d dateraDriver) Get(r volume.Request) volume.Response {
 	return volume.Response{Err: fmt.Sprintf("Unable to find volume mounted on %s", m)}
 }
 
-func (d dateraDriver) Path(r volume.Request) volume.Response {
+func (d DateraDriver) Path(r volume.Request) volume.Response {
 	return volume.Response{Mountpoint: d.mountpoint(r.Name)}
 }
 
-func (d dateraDriver) Mount(r volume.MountRequest) volume.Response {
+func (d DateraDriver) Mount(r volume.MountRequest) volume.Response {
 	d.m.Lock()
 	defer d.m.Unlock()
 	m := d.mountpoint(r.Name)
@@ -192,7 +206,7 @@ func (d dateraDriver) Mount(r volume.MountRequest) volume.Response {
 	return volume.Response{Mountpoint: m}
 }
 
-func (d dateraDriver) Unmount(r volume.UnmountRequest) volume.Response {
+func (d DateraDriver) Unmount(r volume.UnmountRequest) volume.Response {
 	d.m.Lock()
 	defer d.m.Unlock()
 	m := d.mountpoint(r.Name)
@@ -212,17 +226,17 @@ func (d dateraDriver) Unmount(r volume.UnmountRequest) volume.Response {
 	return volume.Response{}
 }
 
-func (d dateraDriver) Capabilities(r volume.Request) volume.Response {
+func (d DateraDriver) Capabilities(r volume.Request) volume.Response {
 	// TODO(mss): Add real backend capabilites to this shim
 	return volume.Response{Capabilities: volume.Capability{Scope: "test"}}
 }
 
-func (d *dateraDriver) mountpoint(name string) string {
+func (d *DateraDriver) mountpoint(name string) string {
 	return filepath.Join(d.root, name)
 }
 
-func (d *dateraDriver) mountVolume(name, destination, fsType string) error {
-	err := d.dateraClient.MountVolume(name, destination, fsType)
+func (d *DateraDriver) mountVolume(name, destination, fsType string) error {
+	err := d.DateraClient.MountVolume(name, destination, fsType)
 	if err != nil {
 		log.Println("Unable to mount the volume %s at %s", name, destination)
 		return err
@@ -231,8 +245,8 @@ func (d *dateraDriver) mountVolume(name, destination, fsType string) error {
 	return nil
 }
 
-func (d *dateraDriver) unmountVolume(name, destination string) error {
-	err := d.dateraClient.UnmountVolume(name, destination)
+func (d *DateraDriver) unmountVolume(name, destination string) error {
+	err := d.DateraClient.UnmountVolume(name, destination)
 	if err != nil {
 		log.Println("Unable to mount the volume %s at %s", name, destination)
 		return err

@@ -10,3 +10,9 @@ clean:
 	rm -rf -- pkg
 	rm -rf -- src/github.com
 	rm -rf -- src/golang.com
+
+test:
+	go get driver
+	go get github.com/stretchr/testify/mock
+	go get github.com/stretchr/testify/assert
+	go test -v driver

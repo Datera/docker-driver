@@ -45,7 +45,7 @@ func main() {
 	defer f.Close()
 	log.SetOutput(f)
 
-	d := newDateraDriver(*root, *restAddress, *dateraBase, *username, *password)
+	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password)
 	h := volume.NewHandler(d)
 	fmt.Printf("listening on %s\n", socketAddress)
 	fmt.Println(h.ServeUnix("root", "datera"))
