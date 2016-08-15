@@ -43,6 +43,9 @@ func main() {
 	}
 	defer f.Close()
 	log.SetOutput(f)
+	log.Println(
+		fmt.Sprintf("Options: root: %s, datera-cluster: %s, datera-base: %s, username: %s, password: %s",
+			*root, *restAddress, *dateraBase, *username, "*******"))
 
 	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password)
 	h := volume.NewHandler(d)

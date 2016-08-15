@@ -21,6 +21,7 @@ const (
 	volumeStopPath   = "/v2/app_instances/%s"
 	volumeGetPath    = "/v2/app_instances/%s"
 	loginPath        = "/v2/login"
+	VERSION          = "1.0"
 )
 
 var (
@@ -58,8 +59,8 @@ type volumeResponse struct {
 }
 
 type Client struct {
-	addr string
-	base string
+	addr     string
+	base     string
 	username string
 	password string
 }
@@ -84,8 +85,8 @@ func (r Client) Login(name string, password string) error {
 	defer resp.Body.Close()
 
 	if err != nil {
-		log.Println("Authorization failed. Check username, passord or cluster IP")
-		fmt.Println("Authorization failed. Check username, passord or cluster IP")
+		log.Println("Authorization failed. Check username, password or cluster IP")
+		fmt.Println("Authorization failed. Check username, password or cluster IP")
 		return err
 	}
 
@@ -602,11 +603,13 @@ func responseCheck(resp *http.Response) error {
 }
 
 func apiRequest(restUrl string, method string, body []byte) (*http.Response, error) {
-	log.Printf("apiRequest restUrl [%s], method [%s], body [%s]",
-		restUrl, method, body)
 	req, err := http.NewRequest(method, restUrl, bytes.NewBuffer(body))
 	req.Header.Set("auth-token", authToken)
 	req.Header.Set("Content-Type", "application/json")
+	hdr := fmt.Sprintf("Docker-Volume-%s", VERSION)
+	req.Header.Set("Datera-Driver", hdr)
+	log.Printf("apiRequest restUrl [%s], method [%s], body [%s], header [%s]",
+		restUrl, method, body, req.Header)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

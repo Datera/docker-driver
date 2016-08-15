@@ -15,7 +15,7 @@ import (
 const (
 	DefaultFS       = "ext4"
 	DefaultReplicas = 3
-	DriverVersion   = "1.0"
+	DriverVersion   = datera.VERSION
 )
 
 type volumeEntry struct {
@@ -27,11 +27,14 @@ type volumeEntry struct {
 // Need to require interface instead of DateraClient directly
 // so we can mock DateraClient out more easily
 type ClientInterface interface {
+	Login(string, string) error
 	VolumeExist(string) (bool, error)
 	CreateVolume(string, uint64, uint8, string, uint64, uint64) error
 	StopVolume(string) error
 	MountVolume(string, string, string) error
 	UnmountVolume(string, string) error
+	DetachVolume(string) error
+	GetIQNandPortal(string) (string, string, string, error)
 }
 
 type DateraDriver struct {
@@ -50,8 +53,13 @@ func NewDateraDriver(root, restAddress, dateraBase, username, password string) D
 		version: DriverVersion,
 	}
 	if len(restAddress) > 0 {
-		d.DateraClient = datera.NewClient(restAddress, dateraBase, username, password)
+		log.Println(
+			fmt.Sprintf("Creating DateraClient object with restAddress: [%s]", restAddress))
+		client := datera.NewClient(restAddress, dateraBase, username, password)
+		d.DateraClient = client
 	}
+	log.Println(
+		fmt.Sprintf("Driver Version: [%s]", d.GetVersion()))
 	return d
 }
 
