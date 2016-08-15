@@ -38,6 +38,11 @@ type MockDateraClient struct {
 	password string
 }
 
+func (m *MockDateraClient) Login(name, password string) error {
+	args := m.Called(name)
+	return args.Error(0)
+}
+
 func (m *MockDateraClient) VolumeExist(name string) (bool, error) {
 	args := m.Called(name)
 	return args.Bool(0), args.Error(1)
@@ -63,6 +68,14 @@ func (m *MockDateraClient) MountVolume(name string, destination string, fsType s
 func (m *MockDateraClient) UnmountVolume(name string, destination string) error {
 	args := m.Called(name)
 	return args.Error(0)
+}
+func (m *MockDateraClient) DetachVolume(name string) error {
+	args := m.Called(name)
+	return args.Error(0)
+}
+func (m *MockDateraClient) GetIQNandPortal(name string) (string, string, string, error) {
+	args := m.Called(name)
+	return "", "", "", args.Error(0)
 }
 
 ///////////////////////////////////////////////////////
