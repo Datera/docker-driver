@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	DefaultFS = "ext4"
+	DefaultFS       = "ext4"
 	DefaultReplicas = 3
+	DriverVersion   = "1.0"
 )
 
 type volumeEntry struct {
@@ -26,11 +27,11 @@ type volumeEntry struct {
 // Need to require interface instead of DateraClient directly
 // so we can mock DateraClient out more easily
 type ClientInterface interface {
-	VolumeExist(string)											(bool, error)
-	CreateVolume(string, uint64, uint8, string, uint64, uint64)	 error
-	StopVolume(string)											 error
-	MountVolume(string, string, string)							 error
-	UnmountVolume(string, string)								 error
+	VolumeExist(string) (bool, error)
+	CreateVolume(string, uint64, uint8, string, uint64, uint64) error
+	StopVolume(string) error
+	MountVolume(string, string, string) error
+	UnmountVolume(string, string) error
 }
 
 type DateraDriver struct {
@@ -38,6 +39,7 @@ type DateraDriver struct {
 	DateraClient ClientInterface
 	volumes      map[string]*volumeEntry
 	m            *sync.Mutex
+	version      string
 }
 
 func NewDateraDriver(root, restAddress, dateraBase, username, password string) DateraDriver {
@@ -45,6 +47,7 @@ func NewDateraDriver(root, restAddress, dateraBase, username, password string) D
 		root:    root,
 		volumes: map[string]*volumeEntry{},
 		m:       &sync.Mutex{},
+		version: DriverVersion,
 	}
 	if len(restAddress) > 0 {
 		d.DateraClient = datera.NewClient(restAddress, dateraBase, username, password)
@@ -56,6 +59,9 @@ func (d DateraDriver) GetVolumeMap() map[string]*volumeEntry {
 	return d.volumes
 }
 
+func (d DateraDriver) GetVersion() string {
+	return d.version
+}
 
 // Create creates a volume on the configured Datera backend
 //

@@ -1,14 +1,14 @@
 package main_test
 
 import (
-	"fmt"
-	"testing"
 	"driver"
+	"fmt"
 	"path/filepath"
+	"testing"
 
+	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/docker/go-plugins-helpers/volume"
 )
 
 const (
@@ -19,10 +19,9 @@ const (
 	testPassword   = "12345678"
 )
 
-
 var (
 	testRequest = volume.Request{
-		Name: "testRequest",
+		Name:    "testRequest",
 		Options: makeOpts("42", "3", "testtemp", "testfstype", "100", "101")}
 	testMountRequest = volume.MountRequest{
 		Name: "testMountRequest"}
@@ -33,14 +32,14 @@ var (
 ///////////////////////////////////////////////////////
 type MockDateraClient struct {
 	mock.Mock
-	addr string
-	base string
+	addr     string
+	base     string
 	username string
 	password string
 }
 
 func (m *MockDateraClient) VolumeExist(name string) (bool, error) {
-	args:= m.Called(name)
+	args := m.Called(name)
 	return args.Bool(0), args.Error(1)
 }
 func (m *MockDateraClient) CreateVolume(
@@ -50,31 +49,32 @@ func (m *MockDateraClient) CreateVolume(
 	template string,
 	maxIops uint64,
 	maxBW uint64) error {
-	args:= m.Called(name)
+	args := m.Called(name)
 	return args.Error(0)
 }
 func (m *MockDateraClient) StopVolume(name string) error {
-	args:= m.Called(name)
+	args := m.Called(name)
 	return args.Error(0)
 }
 func (m *MockDateraClient) MountVolume(name string, destination string, fsType string) error {
-	args:= m.Called(name)
+	args := m.Called(name)
 	return args.Error(0)
 }
 func (m *MockDateraClient) UnmountVolume(name string, destination string) error {
-	args:= m.Called(name)
+	args := m.Called(name)
 	return args.Error(0)
 }
+
 ///////////////////////////////////////////////////////
 
 func makeOpts(size, replica, template, fstype, maxiops, maxbw string) map[string]string {
-	testOptions := map[string]string {
-		"size": size,
-		"replica": replica,
+	testOptions := map[string]string{
+		"size":     size,
+		"replica":  replica,
 		"template": template,
-		"fstype": fstype,
-		"maxiops": maxiops,
-		"maxbw": maxbw,
+		"fstype":   fstype,
+		"maxiops":  maxiops,
+		"maxbw":    maxbw,
 	}
 	return testOptions
 }
@@ -97,7 +97,6 @@ func mockSetup(t *testing.T) (*assert.Assertions, main.DateraDriver) {
 	return assert, d
 }
 
-
 func TestDriverConstructor(t *testing.T) {
 	assert := assert.New(t)
 
@@ -111,6 +110,11 @@ func TestDriverConstructor(t *testing.T) {
 
 	e := fmt.Sprintf("Constructor Returned Incorrect Type: %T", d)
 	assert.True(ok, e)
+}
+
+func TestDriverVersion(t *testing.T) {
+	assert, d := mockSetup(t)
+	assert.NotNil(d.GetVersion())
 }
 
 func TestDriverCreate(t *testing.T) {
@@ -168,4 +172,3 @@ func TestDriverPath(t *testing.T) {
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
 	assert.Equal(volume.Response{Mountpoint: enddir}, result)
 }
-
