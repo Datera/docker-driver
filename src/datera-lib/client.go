@@ -484,8 +484,10 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 	if out, err :=
 		exec.Command("mount", "-t", fsType,
 			"-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
-		log.Println("mount failed for volume [%s]. output [%s], error [%s]", sourceDisk, out, err)
-		log.Println("Checking for disk formatting [%s]", sourceDisk)
+		log.Println(
+			fmt.Sprintf("mount failed for volume [%s]. output [%s], error [%s]", sourceDisk, out, err))
+		log.Println(
+			fmt.Sprintf("Checking for disk formatting [%s]", sourceDisk))
 
 		if fsType == "ext4" {
 			log.Println("ext4 block fsType [%s]", fsType)
@@ -493,7 +495,8 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 				exec.Command("mkfs."+fsType, "-E",
 					"lazy_itable_init=0,lazy_journal_init=0", "-F", sourceDisk).CombinedOutput()
 		} else {
-			log.Println("fsType [%s]", fsType)
+			log.Println(
+				fmt.Sprintf("fsType [%s]", fsType))
 			_, err =
 				exec.Command("mkfs."+fsType, sourceDisk).CombinedOutput()
 		}
@@ -505,7 +508,8 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 				log.Println("Error in mounting. Error = ", err)
 				return err
 			} else {
-				log.Println("Mounted [%s] successfully on [%s]", sourceDisk, destination)
+				log.Println(
+					fmt.Sprintf("Mounted [%s] successfully on [%s]", sourceDisk, destination))
 				return nil
 			}
 		} else {
@@ -513,7 +517,8 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 		}
 		return err
 	}
-	log.Println("Mounted [%s] successfully on [%s]", sourceDisk, destination)
+	log.Println(
+		fmt.Sprintf("Mounted [%s] successfully on [%s]", sourceDisk, destination))
 	return nil
 }
 
@@ -521,7 +526,8 @@ func doUnmount(destination string) error {
 	log.Println("Unmounting %s", destination)
 
 	if out, err := exec.Command("umount", destination).CombinedOutput(); err != nil {
-		log.Println("doUnmount:: Unmounting failed for [%s]. output [%s]", destination, out)
+		log.Println(
+			fmt.Sprintf("doUnmount:: Unmounting failed for [%s]. output [%s]", destination, out))
 		log.Println("doUnmount:: error = ", err)
 		return err
 	}
