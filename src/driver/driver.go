@@ -99,13 +99,15 @@ func (d DateraDriver) Create(r volume.Request) volume.Response {
 
 	// Set default filesystem to ext4
 	if len(fsType) == 0 {
-		log.Println("Using default filesystem value of %s", DefaultReplicas)
+		log.Println(
+			fmt.Sprintf("Using default filesystem value of %s", DefaultReplicas))
 		fsType = DefaultFS
 	}
 
 	// Set default replicas to 3
 	if replica == 0 {
-		log.Println("Using default replica value of %s", DefaultReplicas)
+		log.Println(
+			fmt.Sprintf("Using default replica value of %s", DefaultReplicas))
 		replica = DefaultReplicas
 	}
 
@@ -252,7 +254,8 @@ func (d *DateraDriver) mountpoint(name string) string {
 func (d *DateraDriver) mountVolume(name, destination, fsType string) error {
 	err := d.DateraClient.MountVolume(name, destination, fsType)
 	if err != nil {
-		log.Println("Unable to mount the volume %s at %s", name, destination)
+		log.Println(
+			fmt.Sprintf("Unable to mount the volume %s at %s", name, destination))
 		return err
 	}
 
@@ -262,7 +265,8 @@ func (d *DateraDriver) mountVolume(name, destination, fsType string) error {
 func (d *DateraDriver) unmountVolume(name, destination string) error {
 	err := d.DateraClient.UnmountVolume(name, destination)
 	if err != nil {
-		log.Println("Unable to mount the volume %s at %s", name, destination)
+		log.Println(
+			fmt.Sprintf("Unable to unmount the volume %s at %s", name, destination))
 		return err
 	}
 	return nil

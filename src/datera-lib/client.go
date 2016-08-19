@@ -93,7 +93,8 @@ func (r Client) Login(name string, password string) error {
 	contents, err := ioutil.ReadAll(resp.Body)
 	var jsonResp interface{}
 	err = json.Unmarshal([]byte(contents), &jsonResp)
-	log.Println("Response:\n %s", string(contents))
+	log.Println(
+		fmt.Sprintf("Response:\n %s", string(contents)))
 	if err != nil {
 		log.Println("Invalid response: ", jsonResp)
 		fmt.Println("Invalid response: ", jsonResp)
@@ -103,7 +104,8 @@ func (r Client) Login(name string, password string) error {
 	jsonResult := jsonResp.(map[string]interface{})
 	authToken = jsonResult["key"].(string)
 
-	log.Println("AuthToken = [%s]", authToken)
+	log.Println(
+		fmt.Sprintf("AuthToken = [%s]", authToken))
 	return err
 }
 
@@ -272,7 +274,8 @@ func (r Client) CreateVolume(
 	fmt.Println("response Status:", resp.Status)
 	fmt.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
-	log.Println("response Body:\n%s", string(body))
+	log.Println(
+		fmt.Sprintf("response Body:\n%s", string(body)))
 	fmt.Println("response Body:", string(body))
 
 	return responseCheck(resp)
@@ -285,8 +288,8 @@ func (r Client) DetachVolume(name string) error {
 	var jsonStr string
 	jsonStr =
 		`{"admin_state": "offline",
-		"force": true
-	}`
+	"force": true
+}`
 	resp, err := apiRequest(u, "PUT", []byte(jsonStr))
 	defer resp.Body.Close()
 	if err != nil {
@@ -296,7 +299,8 @@ func (r Client) DetachVolume(name string) error {
 	fmt.Println("response Status:", resp.Status)
 	fmt.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
-	log.Println("response Body:\n%s", string(body))
+	log.Println(
+		fmt.Sprintf("response Body:\n%s", string(body)))
 	fmt.Println("response Body:", string(body))
 
 	return responseCheck(resp)
@@ -402,14 +406,16 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 		fmt.Println("storage name = ", storage_name)
 	}
 
-	log.Println("iqn = [%s], portal = [%s], volume-uuid = [%s]", iqn, portal, volUUID)
+	log.Println(
+		fmt.Sprintf("iqn = [%s], portal = [%s], volume-uuid = [%s]", iqn, portal, volUUID))
 	return iqn, portal, volUUID, err
 }
 
 func (r Client) MountVolume(name string, destination string, fsType string) error {
 	iqn, portal, volUUID, err := r.GetIQNandPortal(name)
 	if err != nil {
-		log.Println("Unable to find IQN and portal for %s.", name)
+		log.Println(
+			fmt.Sprintf("Unable to find IQN and portal for %s.", name))
 		return err
 	}
 
@@ -440,7 +446,8 @@ func (r Client) MountVolume(name string, destination string, fsType string) erro
 
 	diskAvailable = waitForDisk(diskPath, 10)
 	if !diskAvailable {
-		log.Println("Device [%s] is not available in 10 seconds", diskPath)
+		log.Println(
+			fmt.Sprintf("Device [%s] is not available in 10 seconds", diskPath))
 		return err
 	}
 
@@ -564,22 +571,25 @@ func isAlreadyMounted(destination string) (bool, error) {
 func (r Client) UnmountVolume(name string, destination string) error {
 	iqn, portal, _, err := r.GetIQNandPortal(name)
 	if err != nil {
-		log.Println("UnmountVolume:: Unable to find IQN and portal for %s.", name)
+		log.Println(
+			fmt.Sprintf("UnmountVolume:: Unable to find IQN and portal for %s.", name))
 		return err
 	}
 
 	err = doUnmount(destination)
 	if err != nil {
-		log.Println("Unable to unmount %s", destination)
+		log.Println(
+			fmt.Sprintf("Unable to unmount %s", destination))
 		return err
 	}
 
 	if out, err :=
 		exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
-		log.Println("Unable to login to target %s at portal %s. Error output [%s]",
-			iqn,
-			portal,
-			string(out))
+		log.Println(
+			fmt.Sprintf("Unable to logout target %s at portal %s. Error output [%s]",
+				iqn,
+				portal,
+				string(out)))
 		return err
 	}
 
@@ -590,11 +600,6 @@ func (r Client) UnmountVolume(name string, destination string) error {
 
 func responseCheck(resp *http.Response) error {
 	var p response
-	/*
-		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
-			return err
-		}
-	*/
 	if !p.Ok {
 		return fmt.Errorf(p.Err)
 	}
