@@ -22,6 +22,7 @@ var (
 	root        = flag.String("root", defaultDir, "datera volumes root directory")
 	username    = flag.String("username", "", "Username for Datera backend account")
 	password    = flag.String("password", "", "Password for Datera backend account")
+	debug       = flag.Bool("debug", false, "Enable debug logging")
 )
 
 func main() {
@@ -47,7 +48,7 @@ func main() {
 		fmt.Sprintf("Options: root: %s, datera-cluster: %s, datera-base: %s, username: %s, password: %s",
 			*root, *restAddress, *dateraBase, *username, "*******"))
 
-	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password)
+	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password, *debug)
 	h := volume.NewHandler(d)
 	fmt.Printf("listening on %s\n", socketAddress)
 	fmt.Println(h.ServeUnix("root", "datera"))

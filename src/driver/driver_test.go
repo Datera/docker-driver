@@ -103,7 +103,8 @@ func mockSetup(t *testing.T) (*assert.Assertions, main.DateraDriver) {
 		testRESTAddr,
 		testDateraBase,
 		testUsername,
-		testPassword)
+		testPassword,
+		true)
 
 	d.DateraClient = mockClient
 
@@ -117,7 +118,8 @@ func TestDriverConstructor(t *testing.T) {
 		testRESTAddr,
 		testDateraBase,
 		testUsername,
-		testPassword)
+		testPassword,
+		true)
 
 	_, ok := d.(main.DateraDriver)
 
@@ -172,7 +174,7 @@ func TestDriverGet(t *testing.T) {
 	assert, d := mockSetup(t)
 	result := d.Get(testRequest)
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
-	assert.Equal(volume.Response{Err: fmt.Sprintf("Unable to find volume mounted on %s", enddir)}, result)
+	assert.Equal(volume.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", enddir)}, result)
 
 	d.Create(testRequest)
 	result = d.Get(testRequest)

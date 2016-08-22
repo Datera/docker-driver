@@ -17,3 +17,7 @@ test:
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/mock
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/assert
 	env GOPATH=${GOPATH} go test -v driver
+
+fmt:
+	env GOPATH=${GOPATH} go fmt driver
+	env GOPATH=${GOPATH} go fmt datera-lib
