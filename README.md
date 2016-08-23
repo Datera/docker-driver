@@ -2,13 +2,21 @@
 
 This plugin uses Datera storage backend as distributed data storage for containers.
 
+## Building
+
+```
+$ make
+```
+
+## Running Unit Tests
+
+```
+$ make test
+```
+
 ## Installation
 
-Using go (until we get proper binaries):
-
-```
-$ go get github.com/datera/datera-volume-driver
-```
+{Update with binary location when we have one}
 
 ## Usage
 
@@ -17,10 +25,10 @@ This plugin doesn't create volumes in your Datera cluster yet, so you'll have to
 1 - Start the plugin using this command:
 
 ```
-$ sudo docker-volume-datera -servers dss-1:dss-2:dss-3
+$ sudo datera-driver -datera-cluster your_cluster_management_url:7717 -username your_user -password your_password
 ```
 
-We use the flag `-servers` to specify where to find the Datera servers. The server names are separated by colon.
+We use the flag `-datera-cluster` to specify where to find the Datera server.
 
 2 - Start your docker containers with the option `--volume-driver=datera` and use the first part of `--volume` to specify the remote volume that you want to connect to:
 
@@ -40,8 +48,7 @@ You need to set two extra flags when you start the extension if you want to let 
 This is an example of the command line to start the plugin:
 
 ```
-$ docker-volume-datera -servers dss-1:dss \
-    -rest http://dss-1:9000 -dss-base /var/lib/datera/volumes
+$ sudo ./datera-driver -datera-cluster http://tlx163:7717 -username admin -password password
 ```
 
 These volumes are replicated among all the peers in the cluster that you specify in the `-servers` flag.
