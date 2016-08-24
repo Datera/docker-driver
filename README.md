@@ -18,6 +18,11 @@ $ make test
 
 {Update with binary location when we have one}
 
+Install udev rules on each docker/mesos node
+```
+sudo ./scripts/install_udev_rules.py
+```
+
 ## Usage
 
 This plugin doesn't create volumes in your Datera cluster yet, so you'll have to create them yourself first.

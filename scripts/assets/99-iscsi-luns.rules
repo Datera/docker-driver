@@ -1,0 +1,7 @@
+# Create symlink in "/dev/disk/by-uuid" folder for a volume. Symlink name is same as UUID of the volume.
+# Rule for the devices with VENDOR as DATERA
+SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_VENDOR}=="DATERA", SYMLINK+="disk/by-uuid/$env{ID_SCSI_SERIAL}"
+# RULE FOR MULTIPATHING. If multipathing is enabled then symlink points to multipath device (/dev/dm-*).
+KERNEL=="dm-[0-9]*", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", PROGRAM=="/bin/sh -c '/sbin/fetch_device_serial_no.sh %k'", NAME="%k", SYMLINK+="disk/by-uuid/%c"
+# Automatically remove device symlink on remove event.
+KERNEL=="dm-[0-9]*", ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", PROGRAM=="/bin/sh -c '/bin/rm /dev/disk/by-uuid/$env{ID_SCSI_SERIAL}'"
