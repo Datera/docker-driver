@@ -22,8 +22,6 @@ const (
 	// MESOS Compatibility Environment Variables
 	DATERA_VOLUME_NAME = "DATERA_VOLUME_NAME"
 	DATERA_VOLUME_OPTS = "DATERA_VOLUME_OPTS"
-	// These are comma separated
-	RequiredKeys = "size"
 )
 
 type volumeEntry struct {
@@ -327,15 +325,25 @@ func (d *DateraDriver) readEnv() (string, map[string]string, error) {
 		fmt.Sprintf("Found environment var: [%#v]=[%#v]", DATERA_VOLUME_OPTS, sopts))
 
 	optsresult := stringArrayToMap(opts, "=")
+	// These are comma separated.  If the first RequiredKeys is not present
+	// the second set will be checked before raising an error.
+	RequiredKeys1 := "size"
+	RequiredKeys2 := "template"
 
-	// Check for required keys
-	for _, k := range strings.Split(RequiredKeys, ",") {
+	// Check for first required key
+	for _, k := range strings.Split(RequiredKeys1, ",") {
 		if _, ok := optsresult[k]; !ok {
-			err := fmt.Errorf("Required key: [%#v] not found in environment variable [%#v]",
-				k,
-				DATERA_VOLUME_OPTS)
-			return volname, optsresult, err
-
+			// If the first key isn't present, check for the second one
+			for _, k2 := range strings.Split(RequiredKeys2, ",") {
+				if _, ok2 := optsresult[k2]; !ok2 {
+					// Raise an error if neither Key set is found
+					err := fmt.Errorf("Required key: [%#v or %#v] not found in environment variable [%#v]",
+						k,
+						k2,
+						DATERA_VOLUME_OPTS)
+					return volname, optsresult, err
+				}
+			}
 		}
 	}
 

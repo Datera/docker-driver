@@ -20,8 +20,11 @@ const (
 	volumeCreatePath = "/v2/app_instances"
 	volumeStopPath   = "/v2/app_instances/%s"
 	volumeGetPath    = "/v2/app_instances/%s"
+	initiatorPath    = "/v2/initiators"
+	aclPath          = "/v2/app_instances/%s/storage_instances/%s/acl_policy"
 	loginPath        = "/v2/login"
 	VERSION          = "1.0"
+	initiatorFile    = "/etc/iscsi/initiatorname.iscsi"
 )
 
 var (
@@ -84,7 +87,7 @@ func (r Client) Login(name string, password string) error {
 				"password": "%s"
 			    }`, name, password))
 	authToken = ""
-	resp, err := apiRequest(url, "PUT", jsonStr)
+	resp, err := apiRequest(url, "PUT", jsonStr, "")
 	defer resp.Body.Close()
 
 	if err != nil {
@@ -136,7 +139,7 @@ func (r Client) volumes() ([]volume, error) {
 	}
 	u := fmt.Sprintf("http://%s%s", r.addr, volumesPath)
 
-	res, err := apiRequest(u, "GET", nil)
+	res, err := apiRequest(u, "GET", nil, "")
 	defer res.Body.Close()
 
 	contents, _ := ioutil.ReadAll(res.Body)
@@ -275,7 +278,7 @@ func (r Client) CreateVolume(
 	if templateUsed == false {
 		jsonStr =
 			`{"name":"` + name + `",
-			"access_control_mode":"allow_all",
+			"access_control_mode":"deny_all",
 			"storage_instances": {
 				"storage-1": {
 					"name":"storage-1",
@@ -293,23 +296,80 @@ func (r Client) CreateVolume(
 	} else {
 		jsonStr =
 			`{"name":"` + name + `",
-			"access_control_mode":"allow_all",
+			"access_control_mode":"deny_all",
 			"app_template":"/app_templates/` + template + `"
 		}`
 	}
 
 	log.Println("jsonStr:\n", jsonStr)
-	resp, err := apiRequest(u, "POST", []byte(jsonStr))
-	defer resp.Body.Close()
+	resp, err := apiRequest(u, "POST", []byte(jsonStr), "")
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		return err
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
-	log.Println(
-		fmt.Sprintf("response Body:\n%#v", string(body)))
+	log.Println("Response Body:\n", string(body))
 	fmt.Println("response Body:", string(body))
 
+	r.CreateACL(name)
+
 	return responseCheck(resp)
+}
+
+func (r Client) CreateACL(volname string) error {
+	authErr := r.Login(r.username, r.password)
+	if authErr != nil {
+		log.Println("Authentication Failure.")
+		return authErr
+	}
+	// Parse InitiatorName
+	dat, err := ioutil.ReadFile(initiatorFile)
+	if err != nil {
+		log.Printf("Could not read file %#v", initiatorFile)
+	}
+	initiator := strings.Split(strings.TrimSpace(string(dat)), "=")[1]
+	log.Printf(initiator)
+
+	// Create the initiator
+	jsonStr := `{"name": "` + volname + `", "id": "` + initiator + `"}`
+	initiators_url := fmt.Sprintf("http://%s%s", r.addr, initiatorPath)
+	resp, err := apiRequest(initiators_url, "POST", []byte(jsonStr), "ConflictError")
+	if err != nil {
+		log.Printf("Initiator Creation Response Error: %s", err)
+		return err
+	}
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	body, _ := ioutil.ReadAll(resp.Body)
+	log.Println("response Body:\n", string(body))
+
+	// Get the relevant app_instance
+	appUrl := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeGetPath, volname))
+	resp, err = apiRequest(appUrl, "GET", nil, "")
+	body, _ = ioutil.ReadAll(resp.Body)
+	log.Println("response Body:\n", string(body))
+
+	// Parse out storage_instance
+	var appInstance map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &appInstance); err != nil {
+		log.Println("json decoder failed for response: ", body)
+		return err
+	}
+
+	log.Println("App Instance Body: ", appInstance)
+	for siName, _ := range appInstance["storage_instances"].(map[string]interface{}) {
+
+		log.Println("Storage Instance: ", siName)
+		aclUrl := fmt.Sprintf("http://%s%s", r.addr,
+			fmt.Sprintf(aclPath, volname, siName))
+		jsonStr := fmt.Sprintf(`{"initiators": ["/initiators/%s"]}`, initiator)
+		apiRequest(aclUrl, "PUT", []byte(jsonStr), "")
+	}
+
+	return nil
 }
 
 func (r Client) DetachVolume(name string) error {
@@ -321,8 +381,10 @@ func (r Client) DetachVolume(name string) error {
 		`{"admin_state": "offline",
 	"force": true
 }`
-	resp, err := apiRequest(u, "PUT", []byte(jsonStr))
-	defer resp.Body.Close()
+	resp, err := apiRequest(u, "PUT", []byte(jsonStr), "")
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		return err
 	}
@@ -346,7 +408,7 @@ func (r Client) StopVolume(name string) error {
 	err := r.DetachVolume(name)
 	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeStopPath, name))
 
-	_, err = apiRequest(u, "DELETE", nil)
+	_, err = apiRequest(u, "DELETE", nil, "")
 	if err != nil {
 		log.Println("Error in delete operation.")
 		return err
@@ -367,11 +429,13 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeGetPath, name))
 	fmt.Println(u)
 
-	resp, err := apiRequest(u, "GET", nil)
+	resp, err := apiRequest(u, "GET", nil, "")
 	if err != nil {
 		return "", "", "", err
 	}
-	defer resp.Body.Close()
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	contents, _ := ioutil.ReadAll(resp.Body)
 	log.Printf("response body for get-volumes:\n%#v", string(contents))
 	if err != nil {
@@ -639,8 +703,14 @@ func responseCheck(resp *http.Response) error {
 	return nil
 }
 
-func apiRequest(restUrl string, method string, body []byte) (*http.Response, error) {
+// okFailMatchString will be used to substring search the response body
+// for a string.  If that string is found, even if the response failed it will
+// be treated as a success
+func apiRequest(restUrl string, method string, body []byte, okFailMatchString string) (*http.Response, error) {
 	req, err := http.NewRequest(method, restUrl, bytes.NewBuffer(body))
+	if err != nil {
+		log.Println("Error Creating Request: ", err)
+	}
 	req.Header.Set("auth-token", authToken)
 	req.Header.Set("Content-Type", "application/json")
 	hdr := fmt.Sprintf("Docker-Volume-%#v", VERSION)
@@ -650,7 +720,19 @@ func apiRequest(restUrl string, method string, body []byte) (*http.Response, err
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
-	log.Println("Response Status: ", resp.Status)
-	log.Println("Response Headers: ", resp.Header)
+	if resp != nil {
+		log.Println("Response Status: ", resp.Status)
+		log.Println("Response Headers: ", resp.Header)
+		// The body can only be read once and we need to read it here
+		// So we'll wrap the contents in another reader with a no-op closer to
+		// make sure it can be read again
+		body, _ = ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = ioutil.NopCloser(bytes.NewReader(body))
+		if okFailMatchString != "" && strings.Contains(string(body), okFailMatchString) {
+			log.Println("Found Match: ", okFailMatchString, " in body: ", string(body))
+			return resp, nil
+		}
+	}
 	return resp, err
 }
