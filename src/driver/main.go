@@ -23,15 +23,20 @@ var (
 	username    = flag.String("username", "", "Username for Datera backend account")
 	password    = flag.String("password", "", "Password for Datera backend account")
 	debug       = flag.Bool("debug", false, "Enable debug logging")
+	version     = flag.Bool("version", false, "Print version info")
 )
 
 func main() {
+	flag.Parse()
+	if *version {
+		fmt.Printf("Version: %s\n", DRIVER+"-"+VERSION)
+		os.Exit(0)
+	}
+
 	var Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
-
-	flag.Parse()
 	if len(*restAddress) == 0 {
 		Usage()
 		os.Exit(1)
