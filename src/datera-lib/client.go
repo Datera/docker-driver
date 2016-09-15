@@ -583,7 +583,12 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 			log.Println("ext4 block fsType [%#v]", fsType)
 			_, err =
 				exec.Command("mkfs."+fsType, "-E",
-					"lazy_itable_init=0,lazy_journal_init=0", "-F", sourceDisk).CombinedOutput()
+					"lazy_itable_init=0,lazy_journal_init=0,nodiscard", "-F", sourceDisk).CombinedOutput()
+		} else if fsType == "xfs" {
+			log.Println(
+				fmt.Sprintf("fsType [%#v]", fsType))
+			_, err =
+				exec.Command("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
 		} else {
 			log.Println(
 				fmt.Sprintf("fsType [%#v]", fsType))
