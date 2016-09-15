@@ -22,6 +22,8 @@ const (
 	// MESOS Compatibility Environment Variables
 	DATERA_VOLUME_NAME = "DATERA_VOLUME_NAME"
 	DATERA_VOLUME_OPTS = "DATERA_VOLUME_OPTS"
+	DRIVER             = "Docker-Volume"
+	VERSION            = "1.0"
 )
 
 type volumeEntry struct {
@@ -64,7 +66,7 @@ func NewDateraDriver(root, restAddress, dateraBase, username, password string, d
 	if len(restAddress) > 0 {
 		log.Println(
 			fmt.Sprintf("Creating DateraClient object with restAddress: [%#v]", restAddress))
-		client := datera.NewClient(restAddress, dateraBase, username, password, debug)
+		client := datera.NewClient(restAddress, dateraBase, username, password, debug, DRIVER, VERSION)
 		d.DateraClient = client
 	}
 	log.Println(
@@ -218,6 +220,10 @@ func (d DateraDriver) Mount(r volume.MountRequest) volume.Response {
 	log.Printf("Mounting volume %#v on %#v\n", r.Name, m)
 
 	s, ok := d.volumes[m]
+
+	if !ok {
+		return volume.Response{Err: fmt.Sprintf("Volume not found: %s", m)}
+	}
 
 	if ok && s.connections > 0 {
 		s.connections++

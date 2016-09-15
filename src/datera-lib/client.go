@@ -67,10 +67,12 @@ type Client struct {
 	username string
 	password string
 	debug    bool
+	driver   string
+	version  string
 }
 
-func NewClient(addr, base, username, password string, debug bool) *Client {
-	client := &Client{addr, base, username, password, debug}
+func NewClient(addr, base, username, password string, debug bool, driver, version string) *Client {
+	client := &Client{addr, base, username, password, debug, driver, version}
 	log.Printf("Client: %#v", client)
 	return client
 }
@@ -87,7 +89,7 @@ func (r Client) Login(name string, password string) error {
 				"password": "%s"
 			    }`, name, password))
 	authToken = ""
-	resp, err := apiRequest(url, "PUT", jsonStr, "")
+	resp, err := r.apiRequest(url, "PUT", jsonStr, "")
 	defer resp.Body.Close()
 
 	if err != nil {
@@ -139,7 +141,7 @@ func (r Client) volumes() ([]volume, error) {
 	}
 	u := fmt.Sprintf("http://%s%s", r.addr, volumesPath)
 
-	res, err := apiRequest(u, "GET", nil, "")
+	res, err := r.apiRequest(u, "GET", nil, "")
 	defer res.Body.Close()
 
 	contents, _ := ioutil.ReadAll(res.Body)
@@ -302,7 +304,7 @@ func (r Client) CreateVolume(
 	}
 
 	log.Println("jsonStr:\n", jsonStr)
-	resp, err := apiRequest(u, "POST", []byte(jsonStr), "")
+	resp, err := r.apiRequest(u, "POST", []byte(jsonStr), "")
 	if resp != nil {
 		defer resp.Body.Close()
 	}
@@ -335,7 +337,7 @@ func (r Client) CreateACL(volname string) error {
 	// Create the initiator
 	jsonStr := `{"name": "` + volname + `", "id": "` + initiator + `"}`
 	initiators_url := fmt.Sprintf("http://%s%s", r.addr, initiatorPath)
-	resp, err := apiRequest(initiators_url, "POST", []byte(jsonStr), "ConflictError")
+	resp, err := r.apiRequest(initiators_url, "POST", []byte(jsonStr), "ConflictError")
 	if err != nil {
 		log.Printf("Initiator Creation Response Error: %s", err)
 		return err
@@ -348,7 +350,7 @@ func (r Client) CreateACL(volname string) error {
 
 	// Get the relevant app_instance
 	appUrl := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeGetPath, volname))
-	resp, err = apiRequest(appUrl, "GET", nil, "")
+	resp, err = r.apiRequest(appUrl, "GET", nil, "")
 	body, _ = ioutil.ReadAll(resp.Body)
 	log.Println("response Body:\n", string(body))
 
@@ -366,7 +368,7 @@ func (r Client) CreateACL(volname string) error {
 		aclUrl := fmt.Sprintf("http://%s%s", r.addr,
 			fmt.Sprintf(aclPath, volname, siName))
 		jsonStr := fmt.Sprintf(`{"initiators": ["/initiators/%s"]}`, initiator)
-		apiRequest(aclUrl, "PUT", []byte(jsonStr), "")
+		r.apiRequest(aclUrl, "PUT", []byte(jsonStr), "")
 	}
 
 	return nil
@@ -381,7 +383,7 @@ func (r Client) DetachVolume(name string) error {
 		`{"admin_state": "offline",
 	"force": true
 }`
-	resp, err := apiRequest(u, "PUT", []byte(jsonStr), "")
+	resp, err := r.apiRequest(u, "PUT", []byte(jsonStr), "")
 	if resp != nil {
 		defer resp.Body.Close()
 	}
@@ -408,7 +410,7 @@ func (r Client) StopVolume(name string) error {
 	err := r.DetachVolume(name)
 	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeStopPath, name))
 
-	_, err = apiRequest(u, "DELETE", nil, "")
+	_, err = r.apiRequest(u, "DELETE", nil, "")
 	if err != nil {
 		log.Println("Error in delete operation.")
 		return err
@@ -429,7 +431,7 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeGetPath, name))
 	fmt.Println(u)
 
-	resp, err := apiRequest(u, "GET", nil, "")
+	resp, err := r.apiRequest(u, "GET", nil, "")
 	if err != nil {
 		return "", "", "", err
 	}
@@ -711,14 +713,14 @@ func responseCheck(resp *http.Response) error {
 // okFailMatchString will be used to substring search the response body
 // for a string.  If that string is found, even if the response failed it will
 // be treated as a success
-func apiRequest(restUrl string, method string, body []byte, okFailMatchString string) (*http.Response, error) {
+func (r Client) apiRequest(restUrl string, method string, body []byte, okFailMatchString string) (*http.Response, error) {
 	req, err := http.NewRequest(method, restUrl, bytes.NewBuffer(body))
 	if err != nil {
 		log.Println("Error Creating Request: ", err)
 	}
 	req.Header.Set("auth-token", authToken)
 	req.Header.Set("Content-Type", "application/json")
-	hdr := fmt.Sprintf("Docker-Volume-%#v", VERSION)
+	hdr := fmt.Sprintf("%s-%s", r.driver, r.version)
 	req.Header.Set("Datera-Driver", hdr)
 	log.Printf("apiRequest restUrl [%#v], method [%#v], body [%#v], header [%#v]",
 		restUrl, method, string(body), req.Header)
