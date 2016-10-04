@@ -23,7 +23,6 @@ const (
 	DATERA_VOLUME_NAME = "DATERA_VOLUME_NAME"
 	DATERA_VOLUME_OPTS = "DATERA_VOLUME_OPTS"
 	DRIVER             = "Docker-Volume"
-	VERSION            = "1.0"
 )
 
 type volumeEntry struct {
@@ -52,9 +51,10 @@ type DateraDriver struct {
 	m            *sync.Mutex
 	version      string
 	debug        bool
+	ssl          bool
 }
 
-func NewDateraDriver(root, restAddress, dateraBase, username, password string, debug bool) DateraDriver {
+func NewDateraDriver(root, restAddress, dateraBase, username, password string, debug, noSsl bool) DateraDriver {
 	d := DateraDriver{
 		root:    root,
 		volumes: map[string]*volumeEntry{},
@@ -66,7 +66,7 @@ func NewDateraDriver(root, restAddress, dateraBase, username, password string, d
 	if len(restAddress) > 0 {
 		log.Println(
 			fmt.Sprintf("Creating DateraClient object with restAddress: [%#v]", restAddress))
-		client := datera.NewClient(restAddress, dateraBase, username, password, debug, DRIVER, VERSION)
+		client := datera.NewClient(restAddress, dateraBase, username, password, debug, !noSsl, DRIVER, DriverVersion)
 		d.DateraClient = client
 	}
 	log.Println(

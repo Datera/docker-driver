@@ -2,6 +2,7 @@ package datera
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -23,7 +24,7 @@ const (
 	initiatorPath    = "/v2/initiators"
 	aclPath          = "/v2/app_instances/%s/storage_instances/%s/acl_policy"
 	loginPath        = "/v2/login"
-	VERSION          = "1.0"
+	VERSION          = "1.0.1"
 	initiatorFile    = "/etc/iscsi/initiatorname.iscsi"
 )
 
@@ -69,17 +70,24 @@ type Client struct {
 	debug    bool
 	driver   string
 	version  string
+	schema   string
 }
 
-func NewClient(addr, base, username, password string, debug bool, driver, version string) *Client {
-	client := &Client{addr, base, username, password, debug, driver, version}
+func NewClient(addr, base, username, password string, debug, ssl bool, driver, version string) *Client {
+	var schema string
+	if ssl {
+		schema = "https"
+	} else {
+		schema = "http"
+	}
+	client := &Client{addr, base, username, password, debug, driver, version, schema}
 	log.Printf("Client: %#v", client)
 	return client
 }
 
 func (r Client) Login(name string, password string) error {
 	log.Printf("Login to [%#v] with user [%#v]", r.addr, name)
-	url := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(loginPath))
+	url := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(loginPath))
 	fmt.Println(url)
 
 	var jsonStr = []byte(
@@ -139,7 +147,7 @@ func (r Client) volumes() ([]volume, error) {
 		log.Println("Authentication Failure.")
 		return nil, authErr
 	}
-	u := fmt.Sprintf("http://%s%s", r.addr, volumesPath)
+	u := fmt.Sprintf("%s://%s%s", r.schema, r.addr, volumesPath)
 
 	res, err := r.apiRequest(u, "GET", nil, "")
 	defer res.Body.Close()
@@ -273,7 +281,7 @@ func (r Client) CreateVolume(
 	if len(template) != 0 {
 		templateUsed = true
 	}
-	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeCreatePath))
+	u := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(volumeCreatePath))
 	fmt.Println(u)
 
 	var jsonStr string
@@ -336,7 +344,7 @@ func (r Client) CreateACL(volname string) error {
 
 	// Create the initiator
 	jsonStr := `{"name": "` + volname + `", "id": "` + initiator + `"}`
-	initiators_url := fmt.Sprintf("http://%s%s", r.addr, initiatorPath)
+	initiators_url := fmt.Sprintf("%s://%s%s", r.schema, r.addr, initiatorPath)
 	resp, err := r.apiRequest(initiators_url, "POST", []byte(jsonStr), "ConflictError")
 	if err != nil {
 		log.Printf("Initiator Creation Response Error: %s", err)
@@ -349,7 +357,7 @@ func (r Client) CreateACL(volname string) error {
 	log.Println("response Body:\n", string(body))
 
 	// Get the relevant app_instance
-	appUrl := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeGetPath, volname))
+	appUrl := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(volumeGetPath, volname))
 	resp, err = r.apiRequest(appUrl, "GET", nil, "")
 	body, _ = ioutil.ReadAll(resp.Body)
 	log.Println("response Body:\n", string(body))
@@ -365,7 +373,7 @@ func (r Client) CreateACL(volname string) error {
 	for siName, _ := range appInstance["storage_instances"].(map[string]interface{}) {
 
 		log.Println("Storage Instance: ", siName)
-		aclUrl := fmt.Sprintf("http://%s%s", r.addr,
+		aclUrl := fmt.Sprintf("%s://%s%s", r.schema, r.addr,
 			fmt.Sprintf(aclPath, volname, siName))
 		jsonStr := fmt.Sprintf(`{"initiators": ["/initiators/%s"]}`, initiator)
 		r.apiRequest(aclUrl, "PUT", []byte(jsonStr), "")
@@ -376,7 +384,7 @@ func (r Client) CreateACL(volname string) error {
 
 func (r Client) DetachVolume(name string) error {
 	log.Println("DetachVolume invoked for ", name)
-	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeStopPath, name))
+	u := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(volumeStopPath, name))
 
 	var jsonStr string
 	jsonStr =
@@ -408,7 +416,7 @@ func (r Client) StopVolume(name string) error {
 	}
 
 	err := r.DetachVolume(name)
-	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeStopPath, name))
+	u := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(volumeStopPath, name))
 
 	_, err = r.apiRequest(u, "DELETE", nil, "")
 	if err != nil {
@@ -428,7 +436,7 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 		return "", "", "", authErr
 	}
 
-	u := fmt.Sprintf("http://%s%s", r.addr, fmt.Sprintf(volumeGetPath, name))
+	u := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(volumeGetPath, name))
 	fmt.Println(u)
 
 	resp, err := r.apiRequest(u, "GET", nil, "")
@@ -725,7 +733,14 @@ func (r Client) apiRequest(restUrl string, method string, body []byte, okFailMat
 	log.Printf("apiRequest restUrl [%#v], method [%#v], body [%#v], header [%#v]",
 		restUrl, method, string(body), req.Header)
 
-	client := &http.Client{}
+	var client *http.Client
+	if r.schema == "https" {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		client = &http.Client{Transport: tr}
+	} else {
+		client = &http.Client{}
+	}
 	resp, err := client.Do(req)
 	if resp != nil {
 		log.Println("Response Status: ", resp.Status)

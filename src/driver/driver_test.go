@@ -17,6 +17,8 @@ const (
 	testDateraBase = "/mnt/datera"
 	testUsername   = "test-user"
 	testPassword   = "12345678"
+	testDebug      = true
+	testNoSSL      = false
 )
 
 var (
@@ -104,7 +106,8 @@ func mockSetup(t *testing.T) (*assert.Assertions, main.DateraDriver) {
 		testDateraBase,
 		testUsername,
 		testPassword,
-		true)
+		testDebug,
+		testNoSSL)
 
 	d.DateraClient = mockClient
 
@@ -119,7 +122,8 @@ func TestDriverConstructor(t *testing.T) {
 		testDateraBase,
 		testUsername,
 		testPassword,
-		true)
+		testDebug,
+		testNoSSL)
 
 	_, ok := d.(main.DateraDriver)
 

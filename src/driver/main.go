@@ -24,12 +24,13 @@ var (
 	password    = flag.String("password", "", "Password for Datera backend account")
 	debug       = flag.Bool("debug", false, "Enable debug logging")
 	version     = flag.Bool("version", false, "Print version info")
+	noSsl       = flag.Bool("no-ssl", false, "Disable driver SSL")
 )
 
 func main() {
 	flag.Parse()
 	if *version {
-		fmt.Printf("Version: %s\n", DRIVER+"-"+VERSION)
+		fmt.Printf("Version: %s\n", DRIVER+"-"+DriverVersion)
 		os.Exit(0)
 	}
 
@@ -53,7 +54,7 @@ func main() {
 		fmt.Sprintf("Options: root: %s, datera-cluster: %s, datera-base: %s, username: %s, password: %s",
 			*root, *restAddress, *dateraBase, *username, "*******"))
 
-	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password, *debug)
+	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password, *debug, *noSsl)
 	h := volume.NewHandler(d)
 	fmt.Printf("listening on %s\n", socketAddress)
 	fmt.Println(h.ServeUnix("root", "datera"))
