@@ -17,14 +17,14 @@ import (
 )
 
 const (
-	volumesPath      = "/v2/app_instances"
-	volumeCreatePath = "/v2/app_instances"
-	volumeStopPath   = "/v2/app_instances/%s"
-	volumeGetPath    = "/v2/app_instances/%s"
-	initiatorPath    = "/v2/initiators"
-	aclPath          = "/v2/app_instances/%s/storage_instances/%s/acl_policy"
-	loginPath        = "/v2/login"
-	VERSION          = "1.0.1"
+	volumesPath      = "/v2.1/app_instances"
+	volumeCreatePath = "/v2.1/app_instances"
+	volumeStopPath   = "/v2.1/app_instances/%s"
+	volumeGetPath    = "/v2.1/app_instances/%s"
+	initiatorPath    = "/v2.1/initiators"
+	aclPath          = "/v2.1/app_instances/%s/storage_instances/%s/acl_policy"
+	loginPath        = "/v2.1/login"
+	VERSION          = "2.0.0"
 	initiatorFile    = "/etc/iscsi/initiatorname.iscsi"
 )
 
@@ -36,6 +36,57 @@ type peer struct {
 	Id     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
+}
+
+type appsresponse struct {
+	Tenant  string        `json:"tenant"`
+	Path    string        `json:"path"`
+	Version string        `json:"version"`
+	Data    []appinstance `json:"data"`
+}
+
+type appresponse struct {
+	Tenant  string      `json:"tenant"`
+	Path    string      `json:"path"`
+	Version string      `json:"version"`
+	Data    appinstance `json:"data"`
+}
+
+type appinstance struct {
+	Tenant           string            `json:"tenant"`
+	Path             string            `json:"path"`
+	Name             string            `json:"name"`
+	Id               string            `json:"id"`
+	Health           string            `json:"health"`
+	Description      string            `json:"description"`
+	AdminState       string            `json:"admin_state"`
+	StorageInstances []storageinstance `json:"storage_instances"`
+	AppTemplate      apptemplate       `json:"app_template"`
+}
+
+type storageinstance struct {
+	Health            string                 `json:"health"`
+	Path              string                 `json:"path"`
+	Name              string                 `json:"name"`
+	AdminState        string                 `json:"admin_state"`
+	OpState           string                 `json:"op_state"`
+	Volumes           []volume               `json:"volumes"`
+	AccessControlMode string                 `json:"access_control_mode"`
+	AclPolicy         map[string]interface{} `json:"acl_policy"`
+	IpPool            map[string]interface{} `json:"ip_pool"`
+	Access            access                 `json:"access"`
+}
+
+type apptemplate struct {
+	Path           string `json:"path"`
+	ResolvedPath   string `json:"resolved_path"`
+	ResolvedTenant string `json:"resolved_tenant"`
+}
+
+type access struct {
+	Path string   `json:"path"`
+	Ips  []string `json:"ips"`
+	Iqn  string   `json:"iqn,omitempty"`
 }
 
 type volume struct {
@@ -71,22 +122,29 @@ type Client struct {
 	driver   string
 	version  string
 	schema   string
+	tenant   string
 }
 
-func NewClient(addr, base, username, password string, debug, ssl bool, driver, version string) *Client {
+func DebugClient(addr string) *Client {
+	myAddr := fmt.Sprintf("%s:7718", addr)
+	client := NewClient(myAddr, "root", "admin", "password", "root", true, true, "Dockers-Debug", VERSION)
+	return client
+}
+
+func NewClient(addr, base, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	var schema string
 	if ssl {
 		schema = "https"
 	} else {
 		schema = "http"
 	}
-	client := &Client{addr, base, username, password, debug, driver, version, schema}
+	client := &Client{addr, base, username, password, debug, driver, version, schema, tenant}
 	log.Printf("Client: %#v", client)
 	return client
 }
 
-func (r Client) Login(name string, password string) error {
-	log.Printf("Login to [%#v] with user [%#v]", r.addr, name)
+func (r Client) Login() error {
+	log.Printf("Login to [%#v] with user [%#v]", r.addr, r.username)
 	url := fmt.Sprintf("%s://%s%s", r.schema, r.addr, fmt.Sprintf(loginPath))
 	fmt.Println(url)
 
@@ -95,7 +153,7 @@ func (r Client) Login(name string, password string) error {
 			    {
 				"name": "%s",
 				"password": "%s"
-			    }`, name, password))
+			    }`, r.username, r.password))
 	authToken = ""
 	resp, err := r.apiRequest(url, "PUT", jsonStr, "")
 	defer resp.Body.Close()
@@ -142,7 +200,7 @@ func (r Client) VolumeExist(name string) (bool, error) {
 }
 
 func (r Client) volumes() ([]volume, error) {
-	authErr := r.Login(r.username, r.password)
+	authErr := r.Login()
 	if authErr != nil {
 		log.Println("Authentication Failure.")
 		return nil, authErr
@@ -159,105 +217,16 @@ func (r Client) volumes() ([]volume, error) {
 		return nil, err
 	}
 
-	var appInstance map[string]interface{}
-	if err := json.Unmarshal([]byte(contents), &appInstance); err != nil {
+	var app appsresponse
+	if err := json.Unmarshal([]byte(contents), &app); err != nil {
 		log.Printf("json decoder failed for response.")
 		return nil, err
 	}
 
 	var outVolumes []volume
-	for k, v := range appInstance {
-		if r.debug {
-			log.Printf("key: ", k)
-			log.Printf("Value:\n", v)
-		}
 
-		storageInstances := v.(map[string]interface{})
-		storage := storageInstances["storage_instances"].(map[string]interface{})
-
-		for k1, v1 := range storage {
-			if r.debug {
-				log.Printf("key1: ", k1)
-				log.Printf("Value1:\n", v1)
-			}
-
-			storageInstance := v1.(map[string]interface{})
-
-			targetUUID := storageInstance["uuid"].(string)
-			if r.debug {
-				log.Printf("targetUUID = ", targetUUID)
-			}
-
-			access := storageInstance["access"].(map[string]interface{})
-			if r.debug {
-				log.Printf("access = ", access)
-			}
-
-			storageIP := access["ips"].([]interface{})
-			if r.debug {
-				log.Printf("storageIP =", storageIP[0].(string))
-			}
-
-			storageIQN := access["iqn"].(string)
-			if r.debug {
-				log.Printf("storageIQN = ", storageIQN)
-			}
-
-			volumes := storageInstance["volumes"].(map[string]interface{})
-			if r.debug {
-				log.Printf("volumes = ", volumes)
-			}
-
-			for vol_key, vol_val := range volumes {
-				var volumeEntry volume
-				if r.debug {
-					log.Printf("vol_key: ", vol_key)
-					log.Printf("vol_val: ", vol_val)
-				}
-
-				volumeData := vol_val.(map[string]interface{})
-
-				volumeName := volumeData["name"].(string)
-				if r.debug {
-					log.Printf("volumeName = ", volumeName)
-				}
-				volumeEntry.Name = volumeName
-
-				volumeUUID := volumeData["uuid"].(string)
-				if r.debug {
-					log.Printf("volumeUUID = ", volumeUUID)
-				}
-				volumeEntry.Uuid = volumeUUID
-
-				volumeStatus := volumeData["op_state"].(string)
-				if r.debug {
-					log.Printf("volumeStatus = ", volumeStatus)
-				}
-				volumeEntry.Status = volumeStatus
-
-				volumeSize := volumeData["size"].(float64)
-				if r.debug {
-					log.Printf("volumeSize = ", volumeSize)
-				}
-				volumeEntry.Size = int(volumeSize)
-
-				volumeReplica := volumeData["replica_count"].(float64)
-				if r.debug {
-					log.Printf("volumeReplica = ", volumeReplica)
-				}
-				volumeEntry.Replica = int(volumeReplica)
-
-				outVolumes = append(outVolumes, volumeEntry)
-				if r.debug {
-					log.Printf("volume [", volumeEntry, "]")
-				}
-			}
-
-			storage_name := storageInstance["name"].(string)
-			if r.debug {
-				log.Printf("storage name = ", storage_name)
-			}
-		}
+	for _, ai := range app.Data {
+		outVolumes = append(outVolumes, ai.StorageInstances[0].Volumes[0])
 	}
 
 	return outVolumes, nil
@@ -270,7 +239,8 @@ func (r Client) CreateVolume(
 	template string,
 	maxIops uint64,
 	maxBW uint64) error {
-	authErr := r.Login(r.username, r.password)
+
+	authErr := r.Login()
 	if authErr != nil {
 		log.Println("Authentication Failure.")
 		return authErr
@@ -288,26 +258,21 @@ func (r Client) CreateVolume(
 	if templateUsed == false {
 		jsonStr =
 			`{"name":"` + name + `",
-			"access_control_mode":"deny_all",
-			"storage_instances": {
-				"storage-1": {
-					"name":"storage-1",
-					"volumes":{
-						"` + name + `":{
-						"name":"` + name + `",
-						"replica_count":` + strconv.Itoa(int(replica)) + `,
-						"size":` + strconv.Itoa(int(size)) + `,
-						"snapshot_policies":{}
-					}
-				}
-			}
-			}
-		}`
+			  "access_control_mode":"deny_all",
+			  "storage_instances": [ {
+						"name":"storage-1",
+						"volumes":[ {
+							"name":"` + name + `",
+							"replica_count":` + strconv.Itoa(int(replica)) + `,
+							"size":` + strconv.Itoa(int(size)) + `,
+							"snapshot_policies":[] }]
+						}]
+				}`
 	} else {
 		jsonStr =
 			`{"name":"` + name + `",
-			"access_control_mode":"deny_all",
-			"app_template":"/app_templates/` + template + `"
+			  "access_control_mode":"deny_all",
+			  "app_template":"/app_templates/` + template + `"
 		}`
 	}
 
@@ -329,7 +294,7 @@ func (r Client) CreateVolume(
 }
 
 func (r Client) CreateACL(volname string) error {
-	authErr := r.Login(r.username, r.password)
+	authErr := r.Login()
 	if authErr != nil {
 		log.Println("Authentication Failure.")
 		return authErr
@@ -363,19 +328,18 @@ func (r Client) CreateACL(volname string) error {
 	log.Println("response Body:\n", string(body))
 
 	// Parse out storage_instance
-	var appInstance map[string]interface{}
-	if err := json.Unmarshal([]byte(body), &appInstance); err != nil {
+	var appresp appresponse
+	if err := json.Unmarshal([]byte(body), &appresp); err != nil {
 		log.Println("json decoder failed for response: ", body)
 		return err
 	}
 
-	log.Println("App Instance Body: ", appInstance)
-	for siName, _ := range appInstance["storage_instances"].(map[string]interface{}) {
-
-		log.Println("Storage Instance: ", siName)
+	log.Println("App Instance Body: ", appresp)
+	for _, si := range appresp.Data.StorageInstances {
+		log.Println("Storage Instance: ", si.Name)
 		aclUrl := fmt.Sprintf("%s://%s%s", r.schema, r.addr,
-			fmt.Sprintf(aclPath, volname, siName))
-		jsonStr := fmt.Sprintf(`{"initiators": ["/initiators/%s"]}`, initiator)
+			fmt.Sprintf(aclPath, volname, si.Name))
+		jsonStr := fmt.Sprintf(`{"initiators": [{"path": "/initiators/%s"}]}`, initiator)
 		r.apiRequest(aclUrl, "PUT", []byte(jsonStr), "")
 	}
 
@@ -409,7 +373,7 @@ func (r Client) DetachVolume(name string) error {
 
 func (r Client) StopVolume(name string) error {
 	log.Println("StopVolume invoked for ", name)
-	authErr := r.Login(r.username, r.password)
+	authErr := r.Login()
 	if authErr != nil {
 		fmt.Println("Authentication Failure.")
 		return authErr
@@ -430,7 +394,7 @@ func (r Client) StopVolume(name string) error {
 
 func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	log.Printf("GetIQNandPortal invoked for [%#v]", name)
-	authErr := r.Login(r.username, r.password)
+	authErr := r.Login()
 	if authErr != nil {
 		fmt.Println("Authentication Failure.")
 		return "", "", "", authErr
@@ -447,63 +411,28 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 		defer resp.Body.Close()
 	}
 	contents, _ := ioutil.ReadAll(resp.Body)
-	log.Printf("response body for get-volumes:\n%#v", string(contents))
+	log.Printf("response body for get-volumes:\n%s", string(contents))
 	if err != nil {
 		log.Printf("Volume list can not be fetched.")
 		return "", "", "", err
 	}
 
-	var appInstance interface{}
-	if err := json.Unmarshal([]byte(contents), &appInstance); err != nil {
+	var appresp appresponse
+	if err := json.Unmarshal([]byte(contents), &appresp); err != nil {
 		log.Printf("json decoder failed for response.")
 		return "", "", "", err
 	}
-
-	storageInstance := appInstance.(map[string]interface{})
-	storage := storageInstance["storage_instances"].(map[string]interface{})
 
 	var iqn string
 	var portal string
 	var volUUID string
 
-	for k1, v1 := range storage {
-		fmt.Println("key1: ", k1)
-		fmt.Println("Value1:\n", v1)
+	for _, siData := range appresp.Data.StorageInstances {
 
-		storageInstance := v1.(map[string]interface{})
-
-		access := storageInstance["access"].(map[string]interface{})
-		log.Printf("access = ", access)
-
-		storageIP := access["ips"].([]interface{})
-		log.Printf("storageIP =", storageIP[0].(string))
-		portal = storageIP[0].(string)
-
-		storageIQN := access["iqn"].(string)
-		log.Printf("storageIQN = ", storageIQN)
-		iqn = storageIQN
-
-		volumes := storageInstance["volumes"].(map[string]interface{})
-		log.Printf("volumes = ", volumes)
-
-		for vol_key, vol_val := range volumes {
-			log.Println("vol_key: ", vol_key)
-			log.Println("vol_val: ", vol_val)
-
-			volumeData := vol_val.(map[string]interface{})
-
-			volumeName := volumeData["name"].(string)
-			log.Printf("volumeName = ", volumeName)
-
-			volumeUUID := volumeData["uuid"].(string)
-			log.Printf("volumeUUID = ", volumeUUID)
-			volUUID = volumeUUID
-
-			break
-		}
-
-		storage_name := storageInstance["name"].(string)
-		fmt.Println("storage name = ", storage_name)
+		iqn = siData.Access.Iqn
+		portal = siData.Access.Ips[0]
+		volUUID = siData.Volumes[0].Uuid
+		break
 	}
 
 	log.Println(
@@ -632,7 +561,7 @@ func doUnmount(destination string) error {
 
 	if out, err := exec.Command("umount", destination).CombinedOutput(); err != nil {
 		log.Println(
-			fmt.Sprintf("doUnmount:: Unmounting failed for [%#v]. output [%#v]", destination, out))
+			fmt.Sprintf("doUnmount:: Unmounting failed for [%#v]. output [%s]", destination, out))
 		log.Println("doUnmount:: error = ", err)
 		return err
 	}
@@ -728,9 +657,12 @@ func (r Client) apiRequest(restUrl string, method string, body []byte, okFailMat
 	}
 	req.Header.Set("auth-token", authToken)
 	req.Header.Set("Content-Type", "application/json")
+	if !strings.HasSuffix(restUrl, "login") {
+		req.Header.Set("tenant", "/"+r.tenant)
+	}
 	hdr := fmt.Sprintf("%s-%s", r.driver, r.version)
 	req.Header.Set("Datera-Driver", hdr)
-	log.Printf("apiRequest restUrl [%#v], method [%#v], body [%#v], header [%#v]",
+	log.Printf("apiRequest \nrestUrl [%#v],\nmethod [%#v],\n body: %s,\n header [%#v]",
 		restUrl, method, string(body), req.Header)
 
 	var client *http.Client
@@ -755,6 +687,8 @@ func (r Client) apiRequest(restUrl string, method string, body []byte, okFailMat
 			log.Println("Found Match: ", okFailMatchString, " in body: ", string(body))
 			return resp, nil
 		}
+	} else {
+		log.Println("Nil Response:", err)
 	}
 	return resp, err
 }

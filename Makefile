@@ -20,4 +20,4 @@ test:
 
 fmt:
 	env GOPATH=${GOPATH} go fmt driver
-	env GOPATH=${GOPATH} go fmt datera-lib
+	env GOPATH=${GOPATH} go fmt datera

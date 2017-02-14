@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"datera-lib"
+	"datera"
 	"github.com/docker/go-plugins-helpers/volume"
 )
 
@@ -34,7 +34,7 @@ type volumeEntry struct {
 // Need to require interface instead of DateraClient directly
 // so we can mock DateraClient out more easily
 type ClientInterface interface {
-	Login(string, string) error
+	Login() error
 	VolumeExist(string) (bool, error)
 	CreateVolume(string, uint64, uint8, string, uint64, uint64) error
 	StopVolume(string) error
@@ -54,7 +54,7 @@ type DateraDriver struct {
 	ssl          bool
 }
 
-func NewDateraDriver(root, restAddress, dateraBase, username, password string, debug, noSsl bool) DateraDriver {
+func NewDateraDriver(root, restAddress, dateraBase, username, password, tenant string, debug, noSsl bool) DateraDriver {
 	d := DateraDriver{
 		root:    root,
 		volumes: map[string]*volumeEntry{},
@@ -66,7 +66,7 @@ func NewDateraDriver(root, restAddress, dateraBase, username, password string, d
 	if len(restAddress) > 0 {
 		log.Println(
 			fmt.Sprintf("Creating DateraClient object with restAddress: [%#v]", restAddress))
-		client := datera.NewClient(restAddress, dateraBase, username, password, debug, !noSsl, DRIVER, DriverVersion)
+		client := datera.NewClient(restAddress, dateraBase, username, password, tenant, debug, !noSsl, DRIVER, DriverVersion)
 		d.DateraClient = client
 	}
 	log.Println(
@@ -102,13 +102,25 @@ func (d DateraDriver) Create(r volume.Request) volume.Response {
 	log.Printf("mountpoint for %#v is [%#v]", r.Name, m)
 	volumeOptions := r.Options
 	log.Printf("Volume Options: %#v", volumeOptions)
-	if len(volumeOptions) == 0 {
+
+	log.Printf("Checking for existing volume [%#v]", r.Name)
+	exist, err := d.DateraClient.VolumeExist(r.Name)
+	if err != nil {
+		return volume.Response{Err: err.Error()}
+	}
+	if exist {
+		log.Println("Found already created volume: ", r.Name)
+		return volume.Response{}
+	}
+	// Handle Mesosphere case where we read environment variables
+	if len(volumeOptions) == 0 && !exist {
 		_, volopts, err := d.readEnv()
 		if err != nil {
 			return volume.Response{Err: err.Error()}
 		}
 		volumeOptions = volopts
 	}
+
 	size, _ := strconv.ParseUint(volumeOptions["size"], 10, 64)
 	replica, _ := strconv.ParseUint(volumeOptions["replica"], 10, 8)
 	template := volumeOptions["template"]
@@ -135,25 +147,15 @@ func (d DateraDriver) Create(r volume.Request) volume.Response {
 	volEntry, ok := d.volumes[m]
 	log.Printf("volEntry = [%#v], ok = [%d]", volEntry, ok)
 
-	if d.DateraClient != nil {
-		log.Printf("Checking for existing volume [%#v]", r.Name)
-		exist, err := d.DateraClient.VolumeExist(r.Name)
-		if err != nil {
-			return volume.Response{Err: err.Error()}
-		}
-
-		if !exist {
-			log.Printf("Sending create-volume to datera server.")
-			if err := d.DateraClient.CreateVolume(
-				r.Name,
-				size,
-				uint8(replica),
-				template,
-				maxIops,
-				maxBW); err != nil {
-				return volume.Response{Err: err.Error()}
-			}
-		}
+	log.Printf("Sending create-volume to datera server.")
+	if err := d.DateraClient.CreateVolume(
+		r.Name,
+		size,
+		uint8(replica),
+		template,
+		maxIops,
+		maxBW); err != nil {
+		return volume.Response{Err: err.Error()}
 	}
 	return volume.Response{}
 }

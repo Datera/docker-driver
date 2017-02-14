@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 
 	"github.com/docker/go-plugins-helpers/volume"
 )
@@ -25,6 +27,8 @@ var (
 	debug       = flag.Bool("debug", false, "Enable debug logging")
 	version     = flag.Bool("version", false, "Print version info")
 	noSsl       = flag.Bool("no-ssl", false, "Disable driver SSL")
+	tenant      = flag.String("tenant", "root", "Tenant requests should use")
+	osUser      = flag.String("os-user", "root", "User which this process should run under")
 )
 
 func main() {
@@ -54,8 +58,16 @@ func main() {
 		fmt.Sprintf("Options: root: %s, datera-cluster: %s, datera-base: %s, username: %s, password: %s",
 			*root, *restAddress, *dateraBase, *username, "*******"))
 
-	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password, *debug, *noSsl)
+	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password, *tenant, *debug, *noSsl)
 	h := volume.NewHandler(d)
 	fmt.Printf("listening on %s\n", socketAddress)
-	fmt.Println(h.ServeUnix("root", "datera"))
+	u, err := user.Lookup(*osUser)
+	if err != nil {
+		fmt.Printf("Could not look up GID for user %s", *osUser)
+	}
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		fmt.Printf("Could not convert gid to int: %s", u.Gid)
+	}
+	fmt.Println(h.ServeUnix("datera", gid))
 }
