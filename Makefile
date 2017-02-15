@@ -1,8 +1,11 @@
 GOPATH=$(shell pwd)
 
 all:
-	env GOPATH=${GOPATH} go get driver
-	env GOPATH=${GOPATH} go build -o datera-driver driver
+	git clone ssh://git@gits.daterainc.com:/go-sdk || true
+	mv go-sdk/src/dsdk src/dsdk
+	rm -rf -- go-sdk
+	env GOPATH=${GOPATH} go get ddd
+	env GOPATH=${GOPATH} go build -o ddd ddd
 
 clean:
 	rm -f -- datera-driver
@@ -11,13 +14,14 @@ clean:
 	rm -rf -- pkg
 	rm -rf -- src/github.com
 	rm -rf -- src/golang.com
+	rm -rf -- src/golang.org
+	rm -rf -- src/dsdk
 
 test:
-	env GOPATH=${GOPATH} go get driver
+	env GOPATH=${GOPATH} go get ddd
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/mock
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/assert
-	env GOPATH=${GOPATH} go test -v driver
+	env GOPATH=${GOPATH} go test -v ddd
 
 fmt:
-	env GOPATH=${GOPATH} go fmt driver
-	env GOPATH=${GOPATH} go fmt datera
+	env GOPATH=${GOPATH} go fmt ddd

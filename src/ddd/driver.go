@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,22 +9,23 @@ import (
 	"strings"
 	"sync"
 
-	"datera"
-	"github.com/docker/go-plugins-helpers/volume"
+	dsdk "dsdk"
+	log "github.com/Sirupsen/logrus"
+	dv "github.com/docker/go-plugins-helpers/volume"
 )
 
 const (
 	DefaultFS       = "ext4"
 	DefaultReplicas = 3
-	DriverVersion   = datera.VERSION
+	DriverVersion   = "1.0.2"
+	DRIVER          = "Docker-Volume"
 
 	// MESOS Compatibility Environment Variables
 	DATERA_VOLUME_NAME = "DATERA_VOLUME_NAME"
 	DATERA_VOLUME_OPTS = "DATERA_VOLUME_OPTS"
-	DRIVER             = "Docker-Volume"
 )
 
-type volumeEntry struct {
+type VolumeEntry struct {
 	name        string
 	fsType      string
 	connections int
@@ -34,7 +34,6 @@ type volumeEntry struct {
 // Need to require interface instead of DateraClient directly
 // so we can mock DateraClient out more easily
 type ClientInterface interface {
-	Login() error
 	VolumeExist(string) (bool, error)
 	CreateVolume(string, uint64, uint8, string, uint64, uint64) error
 	StopVolume(string) error
@@ -45,41 +44,32 @@ type ClientInterface interface {
 }
 
 type DateraDriver struct {
-	root         string
+	Root         string
 	DateraClient ClientInterface
-	volumes      map[string]*volumeEntry
-	m            *sync.Mutex
-	version      string
-	debug        bool
-	ssl          bool
+	Volumes      map[string]*VolumeEntry
+	Mutex        *sync.Mutex
+	Version      string
+	Debug        bool
+	Ssl          bool
 }
 
 func NewDateraDriver(root, restAddress, dateraBase, username, password, tenant string, debug, noSsl bool) DateraDriver {
 	d := DateraDriver{
-		root:    root,
-		volumes: map[string]*volumeEntry{},
-		m:       &sync.Mutex{},
-		version: DriverVersion,
-		debug:   debug,
+		Root:    root,
+		Volumes: map[string]*VolumeEntry{},
+		Mutex:   &sync.Mutex{},
+		Version: DriverVersion,
+		Debug:   debug,
 	}
-	log.Printf("DateraDriver: %#v", d)
+	log.Debugf("DateraDriver: %#v", d)
 	if len(restAddress) > 0 {
-		log.Println(
-			fmt.Sprintf("Creating DateraClient object with restAddress: [%#v]", restAddress))
+		log.Debugf(
+			"Creating DateraClient object with restAddress: %s", restAddress)
 		client := datera.NewClient(restAddress, dateraBase, username, password, tenant, debug, !noSsl, DRIVER, DriverVersion)
 		d.DateraClient = client
 	}
-	log.Println(
-		fmt.Sprintf("Driver Version: [%#v]", d.GetVersion()))
+	log.Debugf("Driver Version: %s", d.Version)
 	return d
-}
-
-func (d DateraDriver) GetVolumeMap() map[string]*volumeEntry {
-	return d.volumes
-}
-
-func (d DateraDriver) GetVersion() string {
-	return d.version
 }
 
 // Create creates a volume on the configured Datera backend
@@ -93,30 +83,30 @@ func (d DateraDriver) GetVersion() string {
 //  fsType -- Default: ext4
 //  maxIops
 //  maxBW
-func (d DateraDriver) Create(r volume.Request) volume.Response {
-	log.Printf("DateraDriver.%#v", "Create")
-	log.Printf("Creating volume %#v\n", r.Name)
-	d.m.Lock()
-	defer d.m.Unlock()
-	m := d.mountpoint(r.Name)
-	log.Printf("mountpoint for %#v is [%#v]", r.Name, m)
+func (d DateraDriver) Create(r dv.Request) dv.Response {
+	log.Debugf("DateraDriver.%s", "Create")
+	log.Debugf("Creating volume %s\n", r.Name)
+	d.Mutex.Lock()
+	defer d.Mutex.Unlock()
+	m := d.mountPoint(r.Name)
+	log.Debugf("Mountpoint for Request %s is %s", r.Name, m)
 	volumeOptions := r.Options
-	log.Printf("Volume Options: %#v", volumeOptions)
+	log.Debugf("Volume Options: %#v", volumeOptions)
 
-	log.Printf("Checking for existing volume [%#v]", r.Name)
+	log.Debugf("Checking for existing volume: %s", r.Name)
 	exist, err := d.DateraClient.VolumeExist(r.Name)
 	if err != nil {
-		return volume.Response{Err: err.Error()}
+		return dv.Response{Err: err.Error()}
 	}
 	if exist {
-		log.Println("Found already created volume: ", r.Name)
-		return volume.Response{}
+		log.Debugf("Found already created volume: ", r.Name)
+		return dv.Response{}
 	}
 	// Handle Mesosphere case where we read environment variables
 	if len(volumeOptions) == 0 && !exist {
 		_, volopts, err := d.readEnv()
 		if err != nil {
-			return volume.Response{Err: err.Error()}
+			return dv.Response{Err: err.Error()}
 		}
 		volumeOptions = volopts
 	}
@@ -130,24 +120,23 @@ func (d DateraDriver) Create(r volume.Request) volume.Response {
 
 	// Set default filesystem to ext4
 	if len(fsType) == 0 {
-		log.Println(
-			fmt.Sprintf("Using default filesystem value of %#v", DefaultReplicas))
+		log.Debugf(
+			"Using default filesystem value of %s", DefaultReplicas)
 		fsType = DefaultFS
 	}
 
 	// Set default replicas to 3
 	if replica == 0 {
-		log.Println(
-			fmt.Sprintf("Using default replica value of %#v", DefaultReplicas))
+		log.Debugf("Using default replica value of %#v", DefaultReplicas)
 		replica = DefaultReplicas
 	}
 
-	d.volumes[m] = &volumeEntry{name: r.Name, fsType: fsType, connections: 0}
+	d.Volumes[m] = &VolumeEntry{name: r.Name, fsType: fsType, connections: 0}
 
-	volEntry, ok := d.volumes[m]
-	log.Printf("volEntry = [%#v], ok = [%d]", volEntry, ok)
+	volEntry, ok := d.Volumes[m]
+	log.Debugf("volEntry = [%#v], ok = [%d]", volEntry, ok)
 
-	log.Printf("Sending create-volume to datera server.")
+	log.Debugf("Sending create-volume to datera server.")
 	if err := d.DateraClient.CreateVolume(
 		r.Name,
 		size,
@@ -155,142 +144,142 @@ func (d DateraDriver) Create(r volume.Request) volume.Response {
 		template,
 		maxIops,
 		maxBW); err != nil {
-		return volume.Response{Err: err.Error()}
+		return dv.Response{Err: err.Error()}
 	}
-	return volume.Response{}
+	return dv.Response{}
 }
 
-func (d DateraDriver) Remove(r volume.Request) volume.Response {
-	log.Printf("DateraDriver.%#v", "Remove")
-	log.Printf("Removing volume %#v\n", r.Name)
-	d.m.Lock()
-	defer d.m.Unlock()
-	m := d.mountpoint(r.Name)
+func (d DateraDriver) Remove(r dv.Request) dv.Response {
+	log.Debugf("DateraDriver.%#v", "Remove")
+	log.Debugf("Removing volume %#v\n", r.Name)
+	d.Mutex.Lock()
+	defer d.Mutex.Unlock()
+	m := d.mountPoint(r.Name)
 
-	log.Printf("Remove: mountpoint %#v", m)
-	if s, ok := d.volumes[m]; ok {
-		log.Printf("Remove: conection count ", s.connections)
+	log.Debugf("Remove: mountpoint %#v", m)
+	if s, ok := d.Volumes[m]; ok {
+		log.Debugf("Remove: conection count ", s.connections)
 		if s.connections <= 1 {
 			if d.DateraClient != nil {
 				if err := d.DateraClient.StopVolume(r.Name); err != nil {
-					return volume.Response{Err: err.Error()}
+					return dv.Response{Err: err.Error()}
 				}
 			}
-			delete(d.volumes, m)
+			delete(d.Volumes, m)
 		}
 	}
-	return volume.Response{}
+	return dv.Response{}
 }
 
-func (d DateraDriver) List(r volume.Request) volume.Response {
-	log.Printf("DateraDriver.%#v", "List")
-	log.Printf("Listing volumes: \n")
-	d.m.Lock()
-	defer d.m.Unlock()
-	var vols []*volume.Volume
-	for _, v := range d.volumes {
+func (d DateraDriver) List(r dv.Request) dv.Response {
+	log.Debugf("DateraDriver.%#v", "List")
+	log.Debugf("Listing volumes: \n")
+	d.Mutex.Lock()
+	defer d.Mutex.Unlock()
+	var vols []*dv.Volume
+	for _, v := range d.Volumes {
 		if d.debug {
-			log.Printf("Volume Name : [", v.name, "] mount-point [", d.mountpoint(v.name))
+			log.Debugf("Volume Name: %s mount-point:  %s", v.name, d.mountPoint(v.name))
 		}
-		vols = append(vols, &volume.Volume{Name: v.name, Mountpoint: d.mountpoint(v.name)})
+		vols = append(vols, &dv.Volume{Name: v.name, Mountpoint: d.mountPoint(v.name)})
 	}
-	return volume.Response{Volumes: vols}
+	return dv.Response{Volumes: vols}
 }
 
-func (d DateraDriver) Get(r volume.Request) volume.Response {
-	log.Printf("DateraDriver.%#v", "Get")
-	log.Printf("Get volumes: %#v", r.Name)
-	d.m.Lock()
-	defer d.m.Unlock()
-	m := d.mountpoint(r.Name)
-	if s, ok := d.volumes[m]; ok {
-		return volume.Response{Volume: &volume.Volume{Name: s.name, Mountpoint: d.mountpoint(s.name)}}
+func (d DateraDriver) Get(r dv.Request) dv.Response {
+	log.Debugf("DateraDriver.%s", "Get")
+	log.Debugf("Get volumes: %s", r.Name)
+	d.Mutex.Lock()
+	defer d.Mutex.Unlock()
+	m := d.mountPoint(r.Name)
+	if s, ok := d.Volumes[m]; ok {
+		return dv.Response{Volume: &dv.Volume{Name: s.name, Mountpoint: d.mountPoint(s.name)}}
 	}
-	return volume.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", m)}
+	return dv.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", m)}
 }
 
-func (d DateraDriver) Path(r volume.Request) volume.Response {
-	log.Printf("DateraDriver.%#v", "Path")
-	return volume.Response{Mountpoint: d.mountpoint(r.Name)}
+func (d DateraDriver) Path(r dv.Request) dv.Response {
+	log.Debugf("DateraDriver.%s", "Path")
+	return dv.Response{Mountpoint: d.mountPoint(r.Name)}
 }
 
-func (d DateraDriver) Mount(r volume.MountRequest) volume.Response {
-	log.Printf("DateraDriver.%#v", "Mount")
-	d.m.Lock()
-	defer d.m.Unlock()
-	m := d.mountpoint(r.Name)
-	log.Printf("Mounting volume %#v on %#v\n", r.Name, m)
+func (d DateraDriver) Mount(r dv.MountRequest) dv.Response {
+	log.Debugf("DateraDriver.%s", "Mount")
+	d.Mutex.Lock()
+	defer d.Mutex.Unlock()
+	m := d.mountPoint(r.Name)
+	log.Debugf("Mounting volume %s on %#v\n", r.Name, m)
 
-	s, ok := d.volumes[m]
+	s, ok := d.Volumes[m]
 
 	if !ok {
-		return volume.Response{Err: fmt.Sprintf("Volume not found: %s", m)}
+		return dv.Response{Err: fmt.Sprintf("Volume not found: %s", m)}
 	}
 
 	if ok && s.connections > 0 {
 		s.connections++
-		return volume.Response{Mountpoint: m}
+		return dv.Response{Mountpoint: m}
 	}
 
 	fi, err := os.Lstat(m)
 
 	if os.IsNotExist(err) {
 		if err := os.MkdirAll(m, 0755); err != nil {
-			return volume.Response{Err: err.Error()}
+			return dv.Response{Err: err.Error()}
 		}
 	} else if err != nil {
-		return volume.Response{Err: err.Error()}
+		return dv.Response{Err: err.Error()}
 	}
 
 	if fi != nil && !fi.IsDir() {
-		return volume.Response{Err: fmt.Sprintf("%v already exist and it's not a directory", m)}
+		return dv.Response{Err: fmt.Sprintf("%v already exist and it's not a directory", m)}
 	}
 
 	if err := d.mountVolume(r.Name, m, s.fsType); err != nil {
-		return volume.Response{Err: err.Error()}
+		return dv.Response{Err: err.Error()}
 	}
 
-	d.volumes[m] = &volumeEntry{name: r.Name, fsType: s.fsType, connections: 1}
+	d.Volumes[m] = &VolumeEntry{name: r.Name, fsType: s.fsType, connections: 1}
 
-	return volume.Response{Mountpoint: m}
+	return dv.Response{Mountpoint: m}
 }
 
-func (d DateraDriver) Unmount(r volume.UnmountRequest) volume.Response {
-	log.Printf("DateraDriver.%#v", "Unmount")
-	d.m.Lock()
-	defer d.m.Unlock()
-	m := d.mountpoint(r.Name)
-	log.Printf("Driver::Unmount: unmounting volume %#v from %#v\n", r.Name, m)
+func (d DateraDriver) Unmount(r dv.UnmountRequest) dv.Response {
+	log.Debugf("DateraDriver.%#v", "Unmount")
+	d.Mutex.Lock()
+	defer d.Mutex.Unlock()
+	m := d.mountPoint(r.Name)
+	log.Debugf("Driver::Unmount: unmounting volume %#v from %#v\n", r.Name, m)
 
-	if s, ok := d.volumes[m]; ok {
+	if s, ok := d.Volumes[m]; ok {
 		if s.connections == 1 {
 			if err := d.unmountVolume(r.Name, m); err != nil {
-				return volume.Response{Err: err.Error()}
+				return dv.Response{Err: err.Error()}
 			}
 		}
 		s.connections--
 	} else {
-		return volume.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", m)}
+		return dv.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", m)}
 	}
 
-	return volume.Response{}
+	return dv.Response{}
 }
 
-func (d DateraDriver) Capabilities(r volume.Request) volume.Response {
-	log.Printf("DateraDriver.%#v", "Capabilities")
+func (d DateraDriver) Capabilities(r dv.Request) dv.Response {
+	log.Debugf("DateraDriver.%#v", "Capabilities")
 	// TODO(mss): Add real backend capabilites to this shim
-	return volume.Response{Capabilities: volume.Capability{Scope: "test"}}
+	return dv.Response{Capabilities: dv.Capability{Scope: "test"}}
 }
 
-func (d *DateraDriver) mountpoint(name string) string {
+func (d *DateraDriver) mountPoint(name string) string {
 	return filepath.Join(d.root, name)
 }
 
 func (d *DateraDriver) mountVolume(name, destination, fsType string) error {
 	err := d.DateraClient.MountVolume(name, destination, fsType)
 	if err != nil {
-		log.Println(
-			fmt.Sprintf("Unable to mount the volume %#v at %#v", name, destination))
+		log.Debugf(
+			"Unable to mount the volume %#v at %#v", name, destination)
 		return err
 	}
 
@@ -300,8 +289,8 @@ func (d *DateraDriver) mountVolume(name, destination, fsType string) error {
 func (d *DateraDriver) unmountVolume(name, destination string) error {
 	err := d.DateraClient.UnmountVolume(name, destination)
 	if err != nil {
-		log.Println(
-			fmt.Sprintf("Unable to unmount the volume %#v at %#v", name, destination))
+		log.Debugf(
+			"Unable to unmount the volume %#v at %#v", name, destination)
 		return err
 	}
 	return nil
@@ -313,13 +302,13 @@ func (d *DateraDriver) readEnv() (string, map[string]string, error) {
 	cmd := `docker inspect --format "{{ index (index .Config.Env) }}" $(docker ps -a -l | tail -n1 | awk '{print $1}')`
 	senvs, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 	if err != nil {
-		log.Println("Unable to determine the most recent docker container")
+		log.Debugf("Unable to determine the most recent docker container")
 		return "", make(map[string]string), err
 	}
 
 	envs := strings.Split(strings.Trim(string(senvs), "[]"), " ")
-	log.Println(
-		fmt.Sprintf("Docker Env Vars: %s", envs))
+	log.Debugf(
+		"Docker Env Vars: %s", envs)
 
 	envmap := stringArrayToMap(envs, "=")
 
@@ -327,10 +316,10 @@ func (d *DateraDriver) readEnv() (string, map[string]string, error) {
 	sopts := envmap[DATERA_VOLUME_OPTS]
 
 	opts := strings.Split(sopts, ",")
-	log.Println(
-		fmt.Sprintf("Found environment var: [%#v]=[%#v]", DATERA_VOLUME_NAME, volname))
-	log.Println(
-		fmt.Sprintf("Found environment var: [%#v]=[%#v]", DATERA_VOLUME_OPTS, sopts))
+	log.Debugf(
+		"Found environment var: %s=%s", DATERA_VOLUME_NAME, volname)
+	log.Debugf(
+		"Found environment var: %s=%s", DATERA_VOLUME_OPTS, sopts)
 
 	optsresult := stringArrayToMap(opts, "=")
 	// These are comma separated.  If the first RequiredKeys is not present
