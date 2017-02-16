@@ -6,6 +6,12 @@ all:
 	rm -rf -- go-sdk
 	env GOPATH=${GOPATH} go get ddd
 	env GOPATH=${GOPATH} go build -o ddd ddd
+	env GOPATH=${GOPATH} go vet ddd
+
+fast:
+	env GOPATH=${GOPATH} go get ddd
+	env GOPATH=${GOPATH} go build -o ddd ddd
+	env GOPATH=${GOPATH} go vet ddd
 
 clean:
 	rm -f -- datera-driver
