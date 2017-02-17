@@ -1,12 +1,14 @@
 package main_test
 
 import (
-	"driver"
+	driver "ddd"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/docker/go-plugins-helpers/volume"
+	dv "github.com/docker/go-plugins-helpers/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -19,68 +21,16 @@ const (
 	testPassword   = "12345678"
 	testDebug      = true
 	testNoSSL      = false
+	testTenant     = "/root"
 )
 
 var (
-	testRequest = volume.Request{
+	testRequest = dv.Request{
 		Name:    "testRequest",
 		Options: makeOpts("42", "3", "testtemp", "testfstype", "100", "101")}
-	testMountRequest = volume.MountRequest{
+	testMountRequest = dv.MountRequest{
 		Name: "testMountRequest"}
 )
-
-///////////////////////////////////////////////////////
-// Mock the DateraClient object for testing the driver
-///////////////////////////////////////////////////////
-type MockDateraClient struct {
-	mock.Mock
-	addr     string
-	base     string
-	username string
-	password string
-}
-
-func (m *MockDateraClient) Login(name, password string) error {
-	args := m.Called(name)
-	return args.Error(0)
-}
-
-func (m *MockDateraClient) VolumeExist(name string) (bool, error) {
-	args := m.Called(name)
-	return args.Bool(0), args.Error(1)
-}
-func (m *MockDateraClient) CreateVolume(
-	name string,
-	size uint64,
-	replica uint8,
-	template string,
-	maxIops uint64,
-	maxBW uint64) error {
-	args := m.Called(name)
-	return args.Error(0)
-}
-func (m *MockDateraClient) StopVolume(name string) error {
-	args := m.Called(name)
-	return args.Error(0)
-}
-func (m *MockDateraClient) MountVolume(name string, destination string, fsType string) error {
-	args := m.Called(name)
-	return args.Error(0)
-}
-func (m *MockDateraClient) UnmountVolume(name string, destination string) error {
-	args := m.Called(name)
-	return args.Error(0)
-}
-func (m *MockDateraClient) DetachVolume(name string) error {
-	args := m.Called(name)
-	return args.Error(0)
-}
-func (m *MockDateraClient) GetIQNandPortal(name string) (string, string, string, error) {
-	args := m.Called(name)
-	return "", "", "", args.Error(0)
-}
-
-///////////////////////////////////////////////////////
 
 func makeOpts(size, replica, template, fstype, maxiops, maxbw string) map[string]string {
 	testOptions := map[string]string{
@@ -94,100 +44,239 @@ func makeOpts(size, replica, template, fstype, maxiops, maxbw string) map[string
 	return testOptions
 }
 
-func mockSetup(t *testing.T) (*assert.Assertions, main.DateraDriver) {
-	assert := assert.New(t)
-
-	mockClient := new(MockDateraClient)
-	mockClient.On("VolumeExist", mock.Anything).Return(true, nil)
-	mockClient.On("StopVolume", mock.Anything).Return(nil)
-
-	d := main.NewDateraDriver(testDefaultDir,
-		testRESTAddr,
-		testDateraBase,
-		testUsername,
-		testPassword,
-		testDebug,
-		testNoSSL)
-
-	d.DateraClient = mockClient
-
-	return assert, d
-}
-
-func TestDriverConstructor(t *testing.T) {
-	assert := assert.New(t)
-
-	var d interface{} = main.NewDateraDriver(testDefaultDir,
-		testRESTAddr,
-		testDateraBase,
-		testUsername,
-		testPassword,
-		testDebug,
-		testNoSSL)
-
-	_, ok := d.(main.DateraDriver)
-
-	e := fmt.Sprintf("Constructor Returned Incorrect Type: %T", d)
-	assert.True(ok, e)
-}
-
-func TestDriverVersion(t *testing.T) {
-	assert, d := mockSetup(t)
-	assert.NotNil(d.GetVersion())
-}
-
 func TestDriverCreate(t *testing.T) {
-	assert, d := mockSetup(t)
+	assert := assert.New(t)
+	mockClient := new(MockDateraClient)
+	mockClient.On("VolumeExist", testRequest.Name).Return(false, nil)
+	mockClient.On("CreateVolume", testRequest.Name, 42, 3, "testtemp", 0, 0).Return(nil)
+	d := driver.NewDateraDriver(testDefaultDir,
+		testRESTAddr,
+		testDateraBase,
+		testUsername,
+		testPassword,
+		testTenant,
+		testDebug,
+		testNoSSL)
+	d.DateraClient = mockClient
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
 
 	result := d.Create(testRequest)
-	assert.Equal(volume.Response{}, result)
-	vmap := d.GetVolumeMap()
+	mockClient.AssertExpectations(t)
+	assert.Equal(dv.Response{}, result)
+	vmap := d.Volumes
 	assert.Equal(len(vmap), 1)
 	assert.NotNil(vmap[enddir])
 }
 
 func TestDriverRemove(t *testing.T) {
-	assert, d := mockSetup(t)
+	assert := assert.New(t)
+	mockClient := new(MockDateraClient)
+	mockClient.On("VolumeExist", testRequest.Name).Return(false, nil)
+	mockClient.On("CreateVolume", testRequest.Name, 42, 3, "testtemp", 0, 0).Return(nil)
+	mockClient.On("DeleteVolume", testRequest.Name).Return(nil)
+	d := driver.NewDateraDriver(testDefaultDir,
+		testRESTAddr,
+		testDateraBase,
+		testUsername,
+		testPassword,
+		testTenant,
+		testDebug,
+		testNoSSL)
+	d.DateraClient = mockClient
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
 
+	// Test deleting a volume that exists
 	d.Create(testRequest)
-
 	result := d.Remove(testRequest)
-	assert.Equal(volume.Response{}, result)
-	vmap := d.GetVolumeMap()
+	assert.Equal(dv.Response{}, result)
+	vmap := d.Volumes
 	assert.Equal(len(vmap), 0)
 	assert.Nil(vmap[enddir])
+
+	// Test deleting a volume that doesn't exist
+	mockClient.On("DeleteVolume", testRequest.Name).Return(nil)
+	result = d.Remove(testRequest)
+	assert.Equal(dv.Response{}, result)
+	vmap = d.Volumes
+	assert.Equal(len(vmap), 0)
+	assert.Nil(vmap[enddir])
+	mockClient.AssertExpectations(t)
 }
 
 func TestDriverList(t *testing.T) {
-	assert, d := mockSetup(t)
+	assert := assert.New(t)
+	mockClient := new(MockDateraClient)
+	mockClient.On("CreateVolume", testRequest.Name, 42, 3, "testtemp", 0, 0).Return(nil)
+	mockClient.On("VolumeExist", testRequest.Name).Return(false, nil)
+	d := driver.NewDateraDriver(testDefaultDir,
+		testRESTAddr,
+		testDateraBase,
+		testUsername,
+		testPassword,
+		testTenant,
+		testDebug,
+		testNoSSL)
+	d.DateraClient = mockClient
 	result := d.List(testRequest)
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
 
-	assert.Equal(volume.Response{Volumes: nil}, result)
+	assert.Equal(dv.Response{Volumes: nil}, result)
 
 	d.Create(testRequest)
-	vols := []*volume.Volume{}
-	vols = append(vols, &volume.Volume{Name: testRequest.Name, Mountpoint: enddir})
+	vols := []*dv.Volume{}
+	vols = append(vols, &dv.Volume{Name: testRequest.Name, Mountpoint: enddir})
 	result = d.List(testRequest)
-	assert.Equal(volume.Response{Volumes: vols}, result)
+	assert.Equal(dv.Response{Volumes: vols}, result)
+	mockClient.AssertExpectations(t)
 }
 
 func TestDriverGet(t *testing.T) {
-	assert, d := mockSetup(t)
+	assert := assert.New(t)
+	mockClient := new(MockDateraClient)
+	mockClient.On("CreateVolume", testRequest.Name, 42, 3, "testtemp", 0, 0).Return(nil)
+	mockClient.On("VolumeExist", testRequest.Name).Return(false, nil)
+	d := driver.NewDateraDriver(testDefaultDir,
+		testRESTAddr,
+		testDateraBase,
+		testUsername,
+		testPassword,
+		testTenant,
+		testDebug,
+		testNoSSL)
+	d.DateraClient = mockClient
 	result := d.Get(testRequest)
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
-	assert.Equal(volume.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", enddir)}, result)
+	assert.Equal(dv.Response{Err: fmt.Sprintf("Unable to find volume mounted on %#v", enddir)}, result)
 
 	d.Create(testRequest)
 	result = d.Get(testRequest)
-	assert.Equal(volume.Response{Volume: &volume.Volume{Name: testRequest.Name, Mountpoint: enddir}}, result)
+	assert.Equal(dv.Response{Volume: &dv.Volume{Name: testRequest.Name, Mountpoint: enddir}}, result)
+	mockClient.AssertExpectations(t)
 }
 
 func TestDriverPath(t *testing.T) {
-	assert, d := mockSetup(t)
+	assert := assert.New(t)
+	mockClient := new(MockDateraClient)
+	d := driver.NewDateraDriver(testDefaultDir,
+		testRESTAddr,
+		testDateraBase,
+		testUsername,
+		testPassword,
+		testTenant,
+		testDebug,
+		testNoSSL)
+	d.DateraClient = mockClient
 	result := d.Path(testRequest)
 	enddir := filepath.Join(testDefaultDir, testRequest.Name)
-	assert.Equal(volume.Response{Mountpoint: enddir}, result)
+	assert.Equal(dv.Response{Mountpoint: enddir}, result)
+	mockClient.AssertExpectations(t)
+}
+
+///////////////////////////////////////////////////////
+// Mock the DateraClient object for testing the driver
+///////////////////////////////////////////////////////
+type MockDateraClient struct {
+	mock.Mock
+	addr     string
+	base     string
+	username string
+	password string
+}
+
+func (m *MockDateraClient) VolumeExist(name string) (bool, error) {
+	args := m.Called(name)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockDateraClient) CreateVolume(name string, size int, replica int, template string, maxIops int, maxBW int) error {
+	args := m.Called(name, size, replica, template, maxIops, maxBW)
+	return args.Error(0)
+}
+func (m *MockDateraClient) DeleteVolume(name string) error {
+	args := m.Called(name)
+	return args.Error(0)
+}
+func (m *MockDateraClient) MountVolume(name string, destination string, fsType string) error {
+	args := m.Called(name, destination)
+	return args.Error(0)
+}
+func (m *MockDateraClient) UnmountVolume(name string, destination string) error {
+	args := m.Called(name, destination)
+	return args.Error(0)
+}
+func (m *MockDateraClient) DetachVolume(name string) error {
+	args := m.Called(name)
+	return args.Error(0)
+}
+func (m *MockDateraClient) GetIQNandPortal(name string) (string, string, string, error) {
+	args := m.Called(name)
+	return "", "", "", args.Error(0)
+}
+
+///////////////////////////////////////////////////////
+
+//////////////////////////
+// Mock FileInfo object //
+//////////////////////////
+type MFileInfo struct {
+	name    string
+	size    int64
+	mode    os.FileMode
+	modtime time.Time
+	isdir   bool
+	sys     interface{}
+}
+
+func (m MFileInfo) Name() string {
+	return m.name
+}
+
+func (m MFileInfo) Size() int64 {
+	return m.size
+}
+
+func (m MFileInfo) Mode() os.FileMode {
+	return m.mode
+}
+
+func (m MFileInfo) ModTime() time.Time {
+	return m.modtime
+}
+
+func (m MFileInfo) IsDir() bool {
+	return m.isdir
+}
+
+func (m MFileInfo) Sys() interface{} {
+	return m.sys
+}
+
+///////////////////////////
+// Mock System/OS object //
+///////////////////////////
+type MSystem struct {
+}
+
+func (s MSystem) Lstat(f string) (os.FileInfo, error) {
+	fmt.Println("Mock Version")
+	return MFileInfo{}, nil
+}
+
+func (s MSystem) Stat(f string) (os.FileInfo, error) {
+	fmt.Println("Mock Version")
+	return MFileInfo{}, nil
+}
+
+func (s MSystem) IsNotExist(e error) bool {
+	fmt.Println("Mock Version")
+	return true
+}
+
+func (s MSystem) MkdirAll(f string, o os.FileMode) error {
+	fmt.Println("Mock Version")
+	return nil
+}
+
+func TestMain(m *testing.M) {
+	driver.OS = MSystem{}
+	os.Exit(m.Run())
 }

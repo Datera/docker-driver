@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 	"time"
@@ -24,12 +23,12 @@ const (
 type Client struct {
 	base  string
 	debug bool
-	api   *dsdk.Client
+	api   *dsdk.SDK
 }
 
 func NewClient(addr, base, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	headers := make(map[string]string)
-	api, err := dsdk.NewClient(addr, "7717", "2.1", username, password, tenant, "30s", headers, false)
+	api, err := dsdk.NewSDK(addr, "7717", "2.1", username, password, tenant, "30s", headers, false)
 	if err != nil {
 		panic(err)
 	}
@@ -104,8 +103,8 @@ func (r Client) CreateACL(name string) error {
 		_, err = iep.Create(fmt.Sprintf("name=%s", iname), fmt.Sprintf("id=%s", initiator))
 		path = fmt.Sprintf("/initiators/%s", initiator)
 	} else {
-		iname = init.GetA()["name"].(string)
-		path = init.GetA()["path"].(string)
+		iname = init.GetM()["name"].(string)
+		path = init.GetM()["path"].(string)
 	}
 
 	// Register initiator with storage instance
@@ -196,13 +195,13 @@ func (r Client) MountVolume(name string, destination string, fsType string) erro
 	}
 
 	if out, err :=
-		exec.Command("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
+		ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
 		log.Debugf("Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
 		return err
 	}
 
 	if out, err :=
-		exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
+		ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
 		log.Debugf("Unable to login to target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
@@ -246,10 +245,10 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 		fsType,
 		mountOptions)
 
-	exec.Command("fsck", "-a", sourceDisk).CombinedOutput()
+	ExecC("fsck", "-a", sourceDisk).CombinedOutput()
 
 	if out, err :=
-		exec.Command("mount", "-t", fsType,
+		ExecC("mount", "-t", fsType,
 			"-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
 		log.Warningf("mount failed for volume: %s. output: %s, error: %s", sourceDisk, string(out), err)
 		log.Infof("Checking for disk formatting: %s", sourceDisk)
@@ -257,20 +256,20 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 		if fsType == "ext4" {
 			log.Debugf("ext4 block fsType: %s", fsType)
 			_, err =
-				exec.Command("mkfs."+fsType, "-E",
+				ExecC("mkfs."+fsType, "-E",
 					"lazy_itable_init=0,lazy_journal_init=0,nodiscard", "-F", sourceDisk).CombinedOutput()
 		} else if fsType == "xfs" {
 			log.Debugf("fsType: %s", fsType)
 			_, err =
-				exec.Command("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
+				ExecC("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
 		} else {
 			log.Debugf("fsType: %s", fsType)
 			_, err =
-				exec.Command("mkfs."+fsType, sourceDisk).CombinedOutput()
+				ExecC("mkfs."+fsType, sourceDisk).CombinedOutput()
 		}
 		if err == nil {
 			log.Debug("Done with formatting, mounting again.")
-			if _, err := exec.Command("mount", "-t", fsType,
+			if _, err := ExecC("mount", "-t", fsType,
 				"-o", strings.Join(mountOptions, ","),
 				sourceDisk, destination).CombinedOutput(); err != nil {
 				log.Errorf("Error in mounting. Error: %s", err)
@@ -291,7 +290,7 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 func doUnmount(destination string) error {
 	log.Debugf("Unmounting: %s", destination)
 
-	if out, err := exec.Command("umount", destination).CombinedOutput(); err != nil {
+	if out, err := ExecC("umount", destination).CombinedOutput(); err != nil {
 		log.Errorf("doUnmount:: Unmounting failed for: %s. output: %s", destination, out)
 		log.Errorf("doUnmount:: error = %s", err)
 		return err
@@ -353,7 +352,7 @@ func (r Client) UnmountVolume(name string, destination string) error {
 	}
 
 	if out, err :=
-		exec.Command("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
+		ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
 		log.Errorf("Unable to logout target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,

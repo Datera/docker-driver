@@ -59,6 +59,8 @@ func main() {
 		"Options: root: %s, datera-cluster: %s, datera-base: %s, username: %s, password: %s",
 		*root, *restAddress, *dateraBase, *username, "*******")
 
+	OS = GetOS()
+
 	d := NewDateraDriver(*root, *restAddress, *dateraBase, *username, *password, *tenant, *debug, *noSsl)
 	h := dv.NewHandler(d)
 	fmt.Printf("listening on %s\n", socketAddress)

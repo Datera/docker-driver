@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,7 +31,7 @@ type VolumeEntry struct {
 
 // Need to require interface instead of DateraClient directly
 // so we can mock DateraClient out more easily
-type ClientInterface interface {
+type IClient interface {
 	VolumeExist(string) (bool, error)
 	CreateVolume(string, int, int, string, int, int) error
 	DeleteVolume(string) error
@@ -44,7 +43,7 @@ type ClientInterface interface {
 
 type DateraDriver struct {
 	Root         string
-	DateraClient ClientInterface
+	DateraClient IClient
 	Volumes      map[string]*VolumeEntry
 	Mutex        *sync.Mutex
 	Version      string
@@ -134,13 +133,8 @@ func (d DateraDriver) Create(r dv.Request) dv.Response {
 	log.Debugf("volEntry: %s, ok: %d", volEntry, ok)
 
 	log.Debugf("Sending create-volume to datera server.")
-	if err := d.DateraClient.CreateVolume(
-		r.Name,
-		int(size),
-		int(replica),
-		template,
-		int(maxIops),
-		int(maxBW)); err != nil {
+	err = d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW))
+	if err != nil {
 		return dv.Response{Err: err.Error()}
 	}
 	return dv.Response{}
@@ -295,7 +289,7 @@ func (d *DateraDriver) readEnv() (string, map[string]string, error) {
 
 	// Parse docker envs from this command
 	cmd := `docker inspect --format "{{ index (index .Config.Env) }}" $(docker ps -a -l | tail -n1 | awk '{print $1}')`
-	senvs, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
+	senvs, err := ExecC("/bin/sh", "-c", cmd).CombinedOutput()
 	if err != nil {
 		log.Debugf("Unable to determine the most recent docker container")
 		return "", make(map[string]string), err

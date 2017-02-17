@@ -27,6 +27,8 @@ test:
 	env GOPATH=${GOPATH} go get ddd
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/mock
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/assert
+	env GOPATH=${GOPATH} go build -o ddd ddd
+	env GOPATH=${GOPATH} go vet ddd
 	env GOPATH=${GOPATH} go test -v ddd
 
 fmt:
