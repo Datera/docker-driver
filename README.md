@@ -109,7 +109,3 @@ $ sudo docker volume create --name my-vol --driver datera --opt size=5
 ```
 $ sudo docker run --volume-driver datera --volume datastore:/data alpine touch /data/hello
 ```
-
-## LICENSE
-
-MIT
