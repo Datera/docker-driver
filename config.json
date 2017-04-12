@@ -1,0 +1,41 @@
+{
+    "description": "Datera Docker Plugin",
+    "documentation": "https://docs.docker.com/engine/extend/plugins/",
+    "entrypoint": [
+        "/bin/sh",
+        "-c",
+        "/usr/sbin/iscsid; /go/docker-driver/dddbin"
+    ],
+    "network": {
+           "type": "host"
+           },
+    "interface" : {
+           "types": ["docker.volumedriver/1.0"],
+           "socket": "datera.sock"
+    },
+    "linux": {
+        "capabilities": ["CAP_IPC_LOCK", "CAP_IPC_OWNER", "CAP_NET_ADMIN", "CAP_SYS_ADMIN", "CAP_MKNOD", "CAP_SYS_MODULE"],
+        "allowAllDevices": true
+    },
+    "propagatedMount": "/mnt",
+    "mounts": [
+        {
+            "source": "/sys",
+            "destination": "/sys",
+            "type": "bind",
+            "options": ["rbind", "rshared"]
+        },
+        {
+            "source": "/root",
+            "destination": "/root",
+            "type": "bind",
+            "options": ["rbind", "rshared"]
+        },
+        {
+            "source": "/dev",
+            "destination": "/dev",
+            "type": "bind",
+            "options": ["rbind", "rshared"]
+        }
+   ]
+}

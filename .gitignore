@@ -30,3 +30,7 @@ _testmain.go
 *.org*
 datera-driver
 bin/
+dsdk
+dddbin
+*.log
+.reviewboardrc
