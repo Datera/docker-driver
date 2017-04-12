@@ -1,5 +1,6 @@
 GOPATH=$(shell pwd)
 BINNAME=dddbin
+IMGNAME=datera
 
 all:
 	git clone http://github.com/Datera/go-sdk || true
@@ -14,6 +15,14 @@ fast:
 	env GOPATH=${GOPATH} go build -o ${BINNAME} ddd
 	env GOPATH=${GOPATH} go vet ddd
 
+plugin: # must be run with "sudo"
+	docker build -t ${IMGNAME} .
+	mkdir -p rootfs
+	docker export `docker create datera true` | sudo tar -x -C rootfs
+	docker rm -vf `docker ps -a | grep datera | head -n 1 | awk '{print $$1}'`
+	docker rmi ${IMGNAME}
+	docker plugin create dateraio/${IMGNAME} .
+
 clean:
 	rm -f -- dddbin
 	rm -f -- ddd.log
@@ -25,6 +34,7 @@ clean:
 	rm -rf -- src/golang.com
 	rm -rf -- src/golang.org
 	rm -rf -- src/dsdk
+	rm -rf -- rootfs
 
 test:
 	env GOPATH=${GOPATH} go get ddd
