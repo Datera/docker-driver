@@ -1,19 +1,20 @@
 GOPATH=$(shell pwd)
+DIRNAME=ddd
 BINNAME=dddbin
 IMGNAME=datera
 
 all:
+	rm -rf -- go-sdk
 	git clone http://github.com/Datera/go-sdk || true
 	mv go-sdk/src/dsdk src/dsdk
-	rm -rf -- go-sdk
-	env GOPATH=${GOPATH} go get ddd
-	env GOPATH=${GOPATH} go build -o ${BINNAME} ddd
-	env GOPATH=${GOPATH} go vet ddd
+	env GOPATH=${GOPATH} go get ${DIRNAME}
+	env GOPATH=${GOPATH} go build -o ${BINNAME} ${DIRNAME}
+	env GOPATH=${GOPATH} go vet ${DIRNAME}
 
 fast:
-	env GOPATH=${GOPATH} go get ddd
-	env GOPATH=${GOPATH} go build -o ${BINNAME} ddd
-	env GOPATH=${GOPATH} go vet ddd
+	env GOPATH=${GOPATH} go get ${DIRNAME}
+	env GOPATH=${GOPATH} go build -o ${BINNAME} ${DIRNAME}
+	env GOPATH=${GOPATH} go vet ${DIRNAME}
 
 plugin: # must be run with "sudo"
 	docker build -t ${IMGNAME} .
@@ -37,12 +38,12 @@ clean:
 	rm -rf -- rootfs
 
 test:
-	env GOPATH=${GOPATH} go get ddd
+	env GOPATH=${GOPATH} go get ${DIRNAME}
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/mock
 	env GOPATH=${GOPATH} go get github.com/stretchr/testify/assert
-	env GOPATH=${GOPATH} go build -o ${BINNAME} ddd
-	env GOPATH=${GOPATH} go vet ddd
-	env GOPATH=${GOPATH} go test -v ddd
+	env GOPATH=${GOPATH} go build -o ${BINNAME} ${DIRNAME}
+	env GOPATH=${GOPATH} go vet ${DIRNAME}
+	env GOPATH=${GOPATH} go test -v ${DIRNAME}
 
 fmt:
-	env GOPATH=${GOPATH} go fmt ddd
+	env GOPATH=${GOPATH} go fmt ${DIRNAME}
