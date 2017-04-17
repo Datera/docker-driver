@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	dsdk "dsdk"
+	dsdk "github.com/Datera/go-sdk/src/dsdk"
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -48,14 +48,15 @@ func (r Client) VolumeExist(name string) (bool, error) {
 	return true, nil
 }
 
-func (r Client) CreateVolume(name string, size int, replica int, template string, maxIops int, maxBW int) error {
+func (r Client) CreateVolume(name string, size int, replica int, template string, maxIops int, maxBW int, placementMode string) error {
 	log.Debugf("CreateVolume invoked for %s", name)
-	// TODO(_alastor_) add QoS and Template Support
-	// Currently those parameters are ignored
+	// TODO(_alastor_) add Template Support
+	// Currently that parameter is ignored
 	vol := dsdk.Volume{
-		Name:         VolumeName,
-		Size:         float64(size),
-		ReplicaCount: replica,
+		Name:          VolumeName,
+		Size:          float64(size),
+		PlacementMode: placementMode,
+		ReplicaCount:  replica,
 	}
 	si := dsdk.StorageInstance{
 		Name:    StorageName,
@@ -70,6 +71,19 @@ func (r Client) CreateVolume(name string, size int, replica int, template string
 		log.Error(err)
 		return err
 	}
+	// Handle QoS values
+	if maxIops != 0 || maxBW != 0 {
+		pp := dsdk.PerformancePolicy{
+			TotalIopsMax:      maxIops,
+			TotalBandwidthMax: maxBW,
+		}
+		// Get Performance_policy endpoint
+		_, err = r.Api.GetEp("app_instances").GetEp(name).GetEp(
+			"storage_instances").GetEp(StorageName).GetEp(
+			"volumes").GetEp(VolumeName).GetEp(
+			"performance_policy").Create(pp)
+	}
+
 	err = r.CreateACL(name, false)
 	if err != nil {
 		log.Error(err)
@@ -259,7 +273,7 @@ func (r Client) MountVolume(name, destination, fsType, volUUID string) error {
 		return err
 	}
 
-	mounted, err := isAlreadyMounted(destination)
+	mounted, err := IsAlreadyMounted(destination)
 	if mounted {
 		log.Errorf("destination mount-point: %s is in use already", destination)
 		return err
@@ -334,7 +348,7 @@ func doUnmount(destination string, retries int) error {
 
 	for i := 0; i < retries; i++ {
 		if out, err := ExecC("umount", destination).CombinedOutput(); err != nil {
-			if strings.Contains(string(out), "not mounted") {
+			if strings.Contains(string(out), "not mounted") || strings.Contains(string(out), "not currently mounted") {
 				return nil
 			}
 			log.Debugf("doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
@@ -370,7 +384,11 @@ func waitForDisk(diskPath string, retries int) bool {
 // Idea is to check if destination mount point is already mounted.
 // If the destination directory and its parent, both are not on the same
 // device, it means directory is already mounted for something.
-func isAlreadyMounted(destination string) (bool, error) {
+
+// Test overridable testvariable
+var IsAlreadyMounted = _isAlreadyMounted
+
+func _isAlreadyMounted(destination string) (bool, error) {
 	destStat, err := OS.Stat(destination)
 	if err != nil {
 		return false, err

@@ -12,10 +12,15 @@ import (
 )
 
 const (
-	DefaultFS       = "ext4"
-	DefaultReplicas = 3
-	DriverVersion   = "1.0.3"
-	DRIVER          = "Docker-Volume"
+	DefaultFS        = "ext4"
+	DefaultReplicas  = 3
+	DefaultPlacement = "hybrid"
+	DriverVersion    = "1.0.4"
+	// Driver Version History
+	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
+	// 1.0.4 -- Adding QoS and PlacementMode volume options
+
+	DRIVER = "Docker-Volume"
 
 	// V2 Volume Plugin static mounts must be under /mnt
 	MountLoc = "/mnt"
@@ -31,7 +36,7 @@ type VolumeEntry struct {
 // so we can mock DateraClient out more easily
 type IClient interface {
 	VolumeExist(string) (bool, error)
-	CreateVolume(string, int, int, string, int, int) error
+	CreateVolume(string, int, int, string, int, int, string) error
 	DeleteVolume(string, string) error
 	LoginVolume(string, string) (string, error)
 	MountVolume(string, string, string, string) error
@@ -74,9 +79,10 @@ func NewDateraDriver(restAddress, username, password, tenant string, debug, noSs
 //	size
 //	replica -- Default: 3
 //  template
-//  FsType -- Default: ext4
+//  fsType -- Default: ext4
 //  maxIops
 //  maxBW
+//  placementMode -- Default: hybrid
 func (d DateraDriver) Create(r dv.Request) dv.Response {
 	log.Debugf("DateraDriver.%s", "Create")
 	log.Debugf("Creating volume %s\n", r.Name)
@@ -102,15 +108,16 @@ func (d DateraDriver) Create(r dv.Request) dv.Response {
 	size, _ := strconv.ParseUint(volOpts["size"], 10, 64)
 	replica, _ := strconv.ParseUint(volOpts["replica"], 10, 8)
 	template := volOpts["template"]
-	FsType := volOpts["FsType"]
+	fsType := volOpts["fsType"]
 	maxIops, _ := strconv.ParseUint(volOpts["maxIops"], 10, 64)
 	maxBW, _ := strconv.ParseUint(volOpts["maxBW"], 10, 64)
+	placementMode, _ := volOpts["placementMode"]
 
 	// Set default filesystem to ext4
-	if len(FsType) == 0 {
+	if len(fsType) == 0 {
 		log.Debugf(
 			"Using default filesystem value of %s", DefaultReplicas)
-		FsType = DefaultFS
+		fsType = DefaultFS
 	}
 
 	// Set default replicas to 3
@@ -118,14 +125,19 @@ func (d DateraDriver) Create(r dv.Request) dv.Response {
 		log.Debugf("Using default replica value of %d", DefaultReplicas)
 		replica = DefaultReplicas
 	}
+	// Set default placement to "hybrid"
+	if placementMode == "" {
+		log.Debugf("Using default placement value of %d", DefaultPlacement)
+		placementMode = DefaultPlacement
+	}
 
-	d.Volumes[m] = &VolumeEntry{Name: r.Name, FsType: FsType, Connections: 0}
+	d.Volumes[m] = &VolumeEntry{Name: r.Name, FsType: fsType, Connections: 0}
 
 	volEntry, ok := d.Volumes[m]
 	log.Debugf("volEntry: %s, ok: %d", volEntry, ok)
 
 	log.Debugf("Sending create-volume to datera server.")
-	err = d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW))
+	err = d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
 	if err != nil {
 		return dv.Response{Err: err.Error()}
 	}

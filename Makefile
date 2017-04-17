@@ -4,9 +4,6 @@ BINNAME=dddbin
 IMGNAME=datera
 
 all:
-	rm -rf -- go-sdk
-	git clone http://github.com/Datera/go-sdk || true
-	mv go-sdk/src/dsdk src/dsdk
 	env GOPATH=${GOPATH} go get ${DIRNAME}
 	env GOPATH=${GOPATH} go build -o ${BINNAME} ${DIRNAME}
 	env GOPATH=${GOPATH} go vet ${DIRNAME}
