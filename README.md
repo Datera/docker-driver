@@ -29,7 +29,7 @@ This is a JSON file with the following structure:
 Update the config file with the relevant information for the cluster then
 run the following:
 ```
-$ sudo docker plugin enable dateraio/datera
+$ sudo docker plugin enable dateraiodev/docker-driver
 ```
 
 Install udev rules on each docker node (from the scripts directory)
@@ -43,12 +43,12 @@ THE FORM "repository/image" NOT JUST "image"
 
 Create a volume
 ```
-$ sudo docker volume create --name my-vol --driver dateraio/datera --opt size=5
+$ sudo docker volume create --name my-vol --driver dateraiodev/docker-driver --opt size=5
 ```
 
-Start your docker containers with the option `--volume-driver=datera` and use the first part of `--volume` to specify the remote volume that you want to connect to:
+Start your docker containers with the option `--volume-driver=dateraiodev/docker-driver` and use the first part of `--volume` to specify the remote volume that you want to connect to:
 ```
-$ sudo docker run --volume-driver dateraio/datera --volume datastore:/data alpine touch /data/hello
+$ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
 
 ## The Hard Way (building from source, not recommended)
@@ -105,7 +105,7 @@ $ sudo ./dddbin
 $ sudo docker volume create --name my-vol --driver datera --opt size=5
 ```
 
-3b - Start your docker containers with the option `--volume-driver=datera` and use the first part of `--volume` to specify the remote volume that you want to connect to:
+3b - Start your docker containers with the option `--volume-driver=dateraiodev/docker-driver` and use the first part of `--volume` to specify the remote volume that you want to connect to:
 ```
-$ sudo docker run --volume-driver datera --volume datastore:/data alpine touch /data/hello
+$ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
