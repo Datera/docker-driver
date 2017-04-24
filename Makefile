@@ -1,7 +1,8 @@
 GOPATH=$(shell pwd)
 DIRNAME=ddd
 BINNAME=dddbin
-IMGNAME=datera
+IMGNAME=docker-driver
+REPONAME=dateraiodev
 
 all:
 	env GOPATH=${GOPATH} go get ${DIRNAME}
@@ -16,10 +17,10 @@ fast:
 plugin: # must be run with "sudo"
 	docker build -t ${IMGNAME} .
 	mkdir -p rootfs
-	docker export `docker create datera true` | sudo tar -x -C rootfs
-	docker rm -vf `docker ps -a | grep datera | head -n 1 | awk '{print $$1}'`
+	docker export `docker create ${IMGNAME} true` | sudo tar -x -C rootfs
+	docker rm -vf `docker ps -a | grep ${IMGNAME} | head -n 1 | awk '{print $$1}'`
 	docker rmi ${IMGNAME}
-	docker plugin create dateraio/${IMGNAME} .
+	docker plugin create ${REPONAME}/${IMGNAME} .
 
 clean:
 	rm -f -- dddbin
