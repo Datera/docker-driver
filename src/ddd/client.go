@@ -8,16 +8,17 @@ import (
 	"time"
 
 	dsdk "github.com/Datera/go-sdk/src/dsdk"
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
-	VERSION       = "2.1.0"
+	VERSION       = "2.1.1"
 	initiatorFile = "/etc/iscsi/initiatorname.iscsi"
 	rBytes        = "0123456789abcdef"
 	StorageName   = "storage-1"
 	VolumeName    = "volume-1"
 	IGPrefix      = "IG-"
+	DatabaseFile  = ".clientdb"
 )
 
 type Client struct {
@@ -28,9 +29,8 @@ type Client struct {
 func NewClient(addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	headers := make(map[string]string)
 	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "ddd.log", true)
-	if err != nil {
-		panic(err)
-	}
+	panicErr(err)
+	prepareDB()
 	client := &Client{
 		Api:   Api,
 		Debug: debug,
@@ -197,20 +197,19 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	return iqn, portal, volUUID, err
 }
 
-func (r Client) FindDeviceFsType(u string) (string, error) {
+func (r Client) FindDeviceFsType(diskPath string) (string, error) {
 	log.Debug("FindDeviceFsType invoked")
 
-	p := fmt.Sprintf("/dev/disk/by-uuid/%s", u)
 	var out []byte
 	var err error
-	if out, err = ExecC("blkid", p).CombinedOutput(); err != nil {
-		log.Debugf("Error finding FsType: %s, out: %s", err, out)
+	if out, err = ExecC("blkid", diskPath).CombinedOutput(); err != nil {
+		log.Debugf("Error findinj FsType: %s, out: %s", err, out)
 		return "", err
 	}
 	re, _ := regexp.Compile(`TYPE="(.*)"`)
 	f := re.FindSubmatch(out)
 	if len(f) > 1 {
-		log.Debugf("Found FsType: %s for Device: %s", string(f[1]), u)
+		log.Debugf("Found FsType: %s for Device: %s", string(f[1]), diskPath)
 		return string(f[1]), nil
 	}
 	return "", fmt.Errorf("Couldn't find FsType")
@@ -229,18 +228,46 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 	if fi != nil && !fi.IsDir() {
 		return "", fmt.Errorf("%s already exist and it's not a directory", destination)
 	}
-	iqn, portal, volUUID, err := r.GetIQNandPortal(name)
+	iqn, portal, _, err := r.GetIQNandPortal(name)
 	if err != nil {
 		log.Debugf("Unable to find IQN and portal for %#v.", name)
 		return "", err
 	}
 
-	diskPath := fmt.Sprintf("/dev/disk/by-uuid/%s", volUUID)
+	timeout := 10
+	var diskPath string
+	for {
+		diskPath, err = doLogin(name, portal, iqn)
+		if err != nil {
+			if timeout <= 0 {
+				return "", err
+			} else {
+				timeout--
+				time.Sleep(time.Second)
+			}
+		} else {
+			break
+		}
+	}
+
+	return diskPath, nil
+
+}
+
+// TODO(_alastor_): Eventually allow non 0 index luns
+func buildPath(portal, iqn string) string {
+	return fmt.Sprintf("/dev/disk/by-path/ip-%s:3260-iscsi-%s-lun-0", portal, iqn)
+}
+
+// Returns path to block device
+func doLogin(name, portal, iqn string) (string, error) {
+	log.Debugf("Logging in volume %s", name)
+	diskPath := buildPath(portal, iqn)
 	diskAvailable := waitForDisk(diskPath, 1)
 
 	if diskAvailable {
 		log.Debugf("Disk: %s is already available.", diskPath)
-		return volUUID, nil
+		return diskPath, nil
 	}
 
 	if out, err :=
@@ -257,15 +284,12 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 			string(out))
 		return "", err
 	}
-
-	return volUUID, nil
-
+	return diskPath, nil
 }
 
-func (r Client) MountVolume(name, destination, fsType, volUUID string) error {
+func (r Client) MountVolume(name, destination, fsType, diskPath string) error {
 	// wait for disk to be available after target login
 
-	diskPath := fmt.Sprintf("/dev/disk/by-uuid/%s", volUUID)
 	diskAvailable := waitForDisk(diskPath, 10)
 	if !diskAvailable {
 		err := fmt.Errorf("Device: %s is not available in 10 seconds", diskPath)

@@ -10,8 +10,9 @@ import (
 	"path"
 	"strconv"
 
-	log "github.com/Sirupsen/logrus"
 	dv "github.com/docker/go-plugins-helpers/volume"
+	stack "github.com/gurpartap/logrus-stack"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -114,6 +115,7 @@ func ParseConfig(file string) (*Config, error) {
 }
 
 func main() {
+	log.AddHook(stack.StandardHook())
 	flag.Parse()
 	if *version {
 		fmt.Printf("Version: %s\n", DRIVER+"-"+DriverVersion)
@@ -167,6 +169,6 @@ func main() {
 		log.Errorf("Could not convert gid to int: %s", u.Gid)
 		os.Exit(3)
 	}
-	fmt.Printf("listening on %s.sock\n", sockName)
-	fmt.Println(h.ServeUnix(sockName, gid))
+	log.Debugf("listening on %s.sock\n", sockName)
+	log.Debug(h.ServeUnix(sockName, gid))
 }

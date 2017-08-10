@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 // Binding this to an exported function for
@@ -46,6 +46,12 @@ func (s System) MkdirAll(f string, o os.FileMode) error {
 }
 
 type ReadFile func(f string) ([]byte, error)
+
+func panicErr(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func ExecC(name string, arg ...string) *exec.Cmd {
 	cmd := name + " " + strings.Join(arg, " ")
