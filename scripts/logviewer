@@ -2,7 +2,6 @@
 
 import io
 import json
-import pprint
 import sys
 
 
@@ -15,7 +14,7 @@ def main():
 
     for line in f.readlines():
         try:
-            pprint.pprint(json.loads(line))
+            print(json.loads(json.loads(line), indent=4))
         except ValueError:
             pass
 
