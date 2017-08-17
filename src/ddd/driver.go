@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,16 +16,25 @@ const (
 	DefaultFS        = "ext4"
 	DefaultReplicas  = 3
 	DefaultPlacement = "hybrid"
-	DriverVersion    = "1.0.5"
+	DriverVersion    = "1.0.6"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
 	// 1.0.5 -- Added stateful DB connection tracking.  Small fixes
+	// 1.0.6 -- Adding support for Docker under DCOS
 
 	DRIVER = "Docker-Volume"
 
 	// V2 Volume Plugin static mounts must be under /mnt
-	MountLoc = "/mnt"
+	MountLoc        = "/mnt"
+	FwkEnvVar       = "DATERA_FRAMEWORK"
+	SizeEnvVar      = "DATERA_VOL_SIZE"
+	ReplicaEnvVar   = "DATERA_REPLICAS"
+	PlacementEnvVar = "DATERA_PLACEMENT"
+	MaxIopsEnvVar   = "DATERA_MAX_IOPS"
+	MaxBWEnvVar     = "DATERA_MAX_BW"
+	TemplateEnvVar  = "DATERA_TEMPLATE"
+	FsTypeEnvVar    = "DATERA_FSTYPE"
 )
 
 type VolumeEntry struct {
@@ -114,30 +124,20 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 	maxBW, _ := strconv.ParseUint(volOpts["maxBW"], 10, 64)
 	placementMode, _ := volOpts["placementMode"]
 
-	// Set default filesystem to ext4
-	if len(fsType) == 0 {
-		log.Debugf(
-			"Using default filesystem value of %s", DefaultReplicas)
-		fsType = DefaultFS
+	// Set values from environment variables if we're running inside
+	// DCOS.  This is only needed if running under Docker.  Running under
+	// Mesos unified containers allows passing these in normally
+	if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
+		setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template)
 	}
 
-	// Set default replicas to 3
-	if replica == 0 {
-		log.Debugf("Using default replica value of %d", DefaultReplicas)
-		replica = DefaultReplicas
-	}
-	// Set default placement to "hybrid"
-	if placementMode == "" {
-		log.Debugf("Using default placement value of %d", DefaultPlacement)
-		placementMode = DefaultPlacement
-	}
+	setDefaults(&fsType, &replica, &placementMode)
 
 	d.Volumes[m] = UpsertVolObj(r.Name, fsType, 0)
 
 	volObj, ok := d.Volumes[m]
 	log.Debugf("volObj: %s, ok: %d", volObj, ok)
 
-	log.Debugf("Sending create-volume to datera server.")
 	err = d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 		diskPath, err := d.DateraClient.LoginVolume(r.Name, m)
 		if err != nil {
 			log.Debugf("Couldn't find volume, error: %s", err)
-			return &dv.GetResponse{Err: fmt.Sprintf("Unable to find volume mounted on %#v", m)}, err
+			return &dv.GetResponse{}, err
 		}
 		fs, _ := d.DateraClient.FindDeviceFsType(diskPath)
 		// The device was previously created, but there is no filesystem
@@ -215,8 +215,33 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 		vol := UpsertVolObj(r.Name, fs, 0)
 		d.Volumes[m] = vol
 		return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: st}}, nil
+	} else if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
+		// We need to create this implicitly since DCOS doesn't support full
+		// volume lifecycle management via Docker
+		var (
+			size          uint64
+			replica       uint64
+			fsType        string
+			maxIops       uint64
+			maxBW         uint64
+			placementMode string
+			template      string
+		)
+		setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template)
+		setDefaults(&fsType, &replica, &placementMode)
+
+		d.Volumes[m] = UpsertVolObj(r.Name, fsType, 0)
+
+		volObj, ok := d.Volumes[m]
+		log.Debugf("volObj: %s, ok: %d", volObj, ok)
+
+		log.Debugf("Sending DCOS IMPLICIT create-volume to datera server.")
+		err := d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
+		if err != nil {
+			return &dv.GetResponse{}, err
+		}
 	}
-	return &dv.GetResponse{Err: fmt.Sprintf("Unable to find volume mounted on %#v", m)}, fmt.Errorf("Unable to find volume mounted on %#v", m)
+	return &dv.GetResponse{}, fmt.Errorf("Unable to find volume mounted on %#v", m)
 }
 
 func (d DateraDriver) Path(r *dv.PathRequest) (*dv.PathResponse, error) {
@@ -236,7 +261,7 @@ func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
 	vol, ok := d.Volumes[m]
 
 	if !ok {
-		return &dv.MountResponse{Err: fmt.Sprintf("Volume not found: %s", m)}, fmt.Errorf("Volume not found: %s", m)
+		return &dv.MountResponse{}, fmt.Errorf("Volume not found: %s", m)
 	}
 
 	if ok && vol.Connections > 0 {
@@ -246,10 +271,10 @@ func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
 	}
 
 	if diskPath, err = d.DateraClient.LoginVolume(r.Name, m); err != nil {
-		return &dv.MountResponse{Err: err.Error()}, err
+		return &dv.MountResponse{}, err
 	}
 	if err = d.DateraClient.MountVolume(r.Name, m, vol.Filesystem, diskPath); err != nil {
-		return &dv.MountResponse{Err: err.Error()}, err
+		return &dv.MountResponse{}, err
 	}
 
 	d.Volumes[m] = UpsertVolObj(r.Name, vol.Filesystem, 1)
@@ -288,4 +313,42 @@ func (d DateraDriver) Capabilities() *dv.CapabilitiesResponse {
 
 func (d DateraDriver) MountPoint(name string) string {
 	return filepath.Join(MountLoc, name)
+}
+
+func setDefaults(fsType *string, replica *uint64, placementMode *string) {
+	// Set default filesystem to ext4
+	if len(*fsType) == 0 {
+		log.Debugf(
+			"Using default filesystem value of %s", DefaultFS)
+		*fsType = DefaultFS
+	}
+
+	// Set default replicas to 3
+	if *replica == 0 {
+		log.Debugf("Using default replica value of %d", DefaultReplicas)
+		*replica = uint64(DefaultReplicas)
+	}
+	// Set default placement to "hybrid"
+	if *placementMode == "" {
+		log.Debugf("Using default placement value of %d", DefaultPlacement)
+		*placementMode = DefaultPlacement
+	}
+	log.Debugf("Setting defaults: fsType %s, replica %d, placementMode %s", fsType, replica, placementMode)
+}
+
+func setFromEnvs(size, replica *uint64, fsType *string, maxIops, maxBW *uint64, placementMode, template *string) {
+	*size, _ = strconv.ParseUint(os.Getenv(SizeEnvVar), 10, 64)
+	if *size == 0 {
+		// We should assume this because other drivers such as REXRAY
+		// default to this behavior for implicit volumes
+		*size = 16
+	}
+	*replica, _ = strconv.ParseUint(os.Getenv(ReplicaEnvVar), 10, 8)
+	*fsType = os.Getenv(FsTypeEnvVar)
+	*maxIops, _ = strconv.ParseUint(os.Getenv(MaxIopsEnvVar), 10, 64)
+	*maxBW, _ = strconv.ParseUint(os.Getenv(MaxBWEnvVar), 10, 64)
+	*placementMode = os.Getenv(PlacementEnvVar)
+	*template = os.Getenv(TemplateEnvVar)
+	log.Debugf("Reading values from Environment variables: size %d, replica %d, fsType %s, maxIops %d, maxBW %d, placementMode %s, template %s",
+		*size, *replica, *fsType, *maxIops, *maxBW, *placementMode, *template)
 }

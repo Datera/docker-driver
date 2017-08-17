@@ -42,6 +42,7 @@ var (
 	version   = flag.Bool("version", false, "Print version info")
 	config    = flag.String("config", "", "Config File Location")
 	genconfig = flag.Bool("genconfig", false, fmt.Sprintf("Generate Config Template. Creates '%s' file", genConfigFile))
+	showenvs  = flag.Bool("show-envs", false, "Print the supported environment variables for use with Docker under DCOS")
 )
 
 type Config struct {
@@ -119,6 +120,18 @@ func main() {
 	flag.Parse()
 	if *version {
 		fmt.Printf("Version: %s\n", DRIVER+"-"+DriverVersion)
+		os.Exit(0)
+	}
+
+	if *showenvs {
+		fmt.Println(FwkEnvVar, ": Datera framework.  Set to 'dcos' if running under DC/OS")
+		fmt.Println(SizeEnvVar, ": Datera volume size")
+		fmt.Println(ReplicaEnvVar, ": Datera volume replica count")
+		fmt.Println(PlacementEnvVar, ": Datera volume placement mode")
+		fmt.Println(MaxIopsEnvVar, ": Datera volume max iops")
+		fmt.Println(MaxBWEnvVar, ": Datera volume max bandwidth")
+		fmt.Println(TemplateEnvVar, ": Datera volume template")
+		fmt.Println(FsTypeEnvVar, ": Datera volume filesystem, eg: ext4")
 		os.Exit(0)
 	}
 

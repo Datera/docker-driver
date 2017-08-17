@@ -49,7 +49,8 @@ func (r Client) VolumeExist(name string) (bool, error) {
 }
 
 func (r Client) CreateVolume(name string, size int, replica int, template string, maxIops int, maxBW int, placementMode string) error {
-	log.Debugf("CreateVolume invoked for %s", name)
+	log.Debugf("CreateVolume invoked for %s, size %d, replica %d, template %s, maxIops %d, maxBW %d, placementMode %s",
+		name, size, replica, template, maxIops, maxBW, placementMode)
 	// TODO(_alastor_) add Template Support
 	// Currently that parameter is ignored
 	vol := dsdk.Volume{
