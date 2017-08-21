@@ -109,3 +109,139 @@ $ sudo docker volume create --name my-vol --driver datera --opt size=5
 ```
 $ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
+
+
+## DCOS/MESOSPHERE Instructions
+
+### Build the driver
+```
+make
+```
+
+### Copy the driver to all relevant Mesos Agent nodes
+```
+scp -i ~/your_ssh_key dddbin user@agent-node:/some/location/dddbin
+```
+
+### Create config file
+```
+$ sudo touch datera-config-file.txt
+```
+This is a JSON file with the following structure:
+```
+{
+    "datera-cluster": "1.1.1.1",
+    "username": "my-user",
+    "password": "my-pass",
+    "debug": false,
+    "ssl": true,
+    "tenant": "/root",
+    "os-user": "root"
+}
+```
+### Copy config file to all relevant Mesos Agent nodes
+```
+scp -i ~/your_ssh_key datera-config-file.txt user@agent-node:/some/location/dddbin
+```
+
+### Start the driver with the config file
+#### For Mesos Container nodes
+```
+sudo ./dddbin -config datera-config-template.txt
+```
+
+#### For Docker Container nodes
+```
+sudo env DATERA_FRAMEWORK=dcos DATERA_VOL_SIZE=33 ./dddbin -config datera-config-template.txt
+```
+The following environment variables are available to use for Docker container nodes
+```
+DATERA_FRAMEWORK=dcos
+DATERA_VOL_SIZE=XX
+DATERA_REPLICAS=X
+DATERA_PLACEMENT=hybrid
+DATERA_MAX_IOPS=100
+DATERA_MAX_BW=100
+DATERA_FSTYPE=ext4
+```
+PLEASE NOTE: These environment variables are necessary only for Docker
+containers and will be global for all Docker containers on each Mesos Agent
+node. Eg: if `DATERA_VOL_SIZE=100` is set on an Agent node EVERY SINGLE DOCKER
+CONTAINER USING DATERA STORAGE WILL USE THIS VALUE.  Mesos containers are
+unaffected
+
+### Create a service with Datera storage
+#### For Mesos containers
+All 'dvdi/xxxxx' options must be double-quoted strings
+```
+{
+  "id": "test-datera-2",
+  "instances": 1,
+  "cpus": 0.1,
+  "mem": 32,
+  "cmd": "/usr/bin/tail -f /dev/null",
+  "container": {
+    "type": "MESOS",
+    "volumes": [
+      {
+        "containerPath": "mesos-test",
+        "external": {
+          "name": "datera-mesos-test-volume",
+          "provider": "dvdi",
+          "options": {
+            "dvdi/driver": "datera",
+            "dvdi/size": "33",
+            "dvdi/replica": "3",
+            "dvdi/maxIops": "100",
+            "dvdi/maxBW": "200",
+            "dvdi/placementMode": "hybrid",
+            "dvdi/fsType": "ext4"
+            }
+        },
+        "mode": "RW"
+      }
+    ]
+  },
+  "upgradeStrategy": {
+    "minimumHealthCapacity": 0,
+    "maximumOverCapacity": 0
+  }
+}
+```
+#### For Docker containers
+You cannot specify any Datera specific information in this JSON blob due to a
+limitation in the way DCOS interacts with Mesos and Docker. The relevant
+options must be specified during driver instantiation time via the environment
+variables shown in an earlier section.
+```
+{
+  "id": "test-datera-docker",
+  "instances": 1,
+  "cpus": 0.1,
+  "mem": 32,
+  "cmd": "/usr/bin/tail -f /dev/null",
+  "container": {
+    "type": "DOCKER",
+    "docker": {
+      "image": "alpine:3.1",
+      "network": "HOST",
+      "forcePullImage": true
+    },
+    "volumes": [
+      {
+        "containerPath": "/data/test-volume",
+        "external": {
+          "name": "datera-docker-volume",
+          "provider": "dvdi",
+          "options": { "dvdi/driver": "datera" }
+        },
+        "mode": "RW"
+      }
+    ]
+  },
+  "upgradeStrategy": {
+    "minimumHealthCapacity": 0,
+    "maximumOverCapacity": 0
+  },
+}
+```
