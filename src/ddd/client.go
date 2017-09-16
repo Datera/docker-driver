@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	VERSION       = "2.1.1"
+	VERSION       = "2.1.2"
 	initiatorFile = "/etc/iscsi/initiatorname.iscsi"
 	rBytes        = "0123456789abcdef"
 	StorageName   = "storage-1"
@@ -238,6 +238,12 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 		log.Debugf("Unable to find IQN and portal for %#v.", name)
 		return "", err
 	}
+	// Make sure we're authorized to access the volume
+	err = r.CreateACL(name, false)
+	if err != nil {
+		log.Error(err)
+		return "", err
+	}
 
 	timeout := 10
 	var diskPath string
@@ -294,11 +300,6 @@ func doLogin(name, portal, iqn string) (string, error) {
 
 func (r Client) MountVolume(name, destination, fsType, diskPath string) error {
 	// wait for disk to be available after target login
-	err := r.CreateACL(name, false)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
 
 	diskAvailable := waitForDisk(diskPath, 10)
 	if !diskAvailable {
