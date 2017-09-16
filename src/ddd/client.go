@@ -17,7 +17,7 @@ const (
 	rBytes        = "0123456789abcdef"
 	StorageName   = "storage-1"
 	VolumeName    = "volume-1"
-	IGPrefix      = "IG-"
+	IGPrefix      = "Docker-Driver-"
 	DatabaseFile  = ".clientdb"
 )
 
@@ -51,21 +51,30 @@ func (r Client) VolumeExist(name string) (bool, error) {
 func (r Client) CreateVolume(name string, size int, replica int, template string, maxIops int, maxBW int, placementMode string) error {
 	log.Debugf("CreateVolume invoked for %s, size %d, replica %d, template %s, maxIops %d, maxBW %d, placementMode %s",
 		name, size, replica, template, maxIops, maxBW, placementMode)
-	// TODO(_alastor_) add Template Support
-	// Currently that parameter is ignored
-	vol := dsdk.Volume{
-		Name:          VolumeName,
-		Size:          float64(size),
-		PlacementMode: placementMode,
-		ReplicaCount:  replica,
-	}
-	si := dsdk.StorageInstance{
-		Name:    StorageName,
-		Volumes: &[]dsdk.Volume{vol},
-	}
-	ai := dsdk.AppInstance{
-		Name:             name,
-		StorageInstances: &[]dsdk.StorageInstance{si},
+	var ai dsdk.AppInstance
+	if template != "" {
+		at := dsdk.AppTemplate{
+			Name: template,
+		}
+		ai = dsdk.AppInstance{
+			Name:        name,
+			AppTemplate: &at,
+		}
+	} else {
+		vol := dsdk.Volume{
+			Name:          VolumeName,
+			Size:          float64(size),
+			PlacementMode: placementMode,
+			ReplicaCount:  replica,
+		}
+		si := dsdk.StorageInstance{
+			Name:    StorageName,
+			Volumes: &[]dsdk.Volume{vol},
+		}
+		ai = dsdk.AppInstance{
+			Name:             name,
+			StorageInstances: &[]dsdk.StorageInstance{si},
+		}
 	}
 	_, err := r.Api.GetEp("app_instances").Create(ai)
 	if err != nil {
@@ -85,11 +94,6 @@ func (r Client) CreateVolume(name string, size int, replica int, template string
 			"performance_policy").Create(pp)
 	}
 
-	err = r.CreateACL(name, false)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
 	return nil
 }
 
@@ -98,7 +102,7 @@ func (r Client) CreateACL(name string, random bool) error {
 	// Parse InitiatorName
 	dat, err := FileReader(initiatorFile)
 	if err != nil {
-		log.Debugf("Could not read file %#v", initiatorFile)
+		log.Debugf("Could not read file %s", initiatorFile)
 		return err
 	}
 	initiator := strings.Split(strings.TrimSpace(string(dat)), "=")[1]
@@ -204,7 +208,7 @@ func (r Client) FindDeviceFsType(diskPath string) (string, error) {
 	var out []byte
 	var err error
 	if out, err = ExecC("blkid", diskPath).CombinedOutput(); err != nil {
-		log.Debugf("Error findinj FsType: %s, out: %s", err, out)
+		log.Debugf("Error finding FsType: %s, out: %s", err, out)
 		return "", err
 	}
 	re, _ := regexp.Compile(`TYPE="(.*)"`)
@@ -290,6 +294,11 @@ func doLogin(name, portal, iqn string) (string, error) {
 
 func (r Client) MountVolume(name, destination, fsType, diskPath string) error {
 	// wait for disk to be available after target login
+	err := r.CreateACL(name, false)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
 
 	diskAvailable := waitForDisk(diskPath, 10)
 	if !diskAvailable {

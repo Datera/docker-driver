@@ -16,12 +16,13 @@ const (
 	DefaultFS        = "ext4"
 	DefaultReplicas  = 3
 	DefaultPlacement = "hybrid"
-	DriverVersion    = "1.0.6"
+	DriverVersion    = "1.0.7"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
 	// 1.0.5 -- Added stateful DB connection tracking.  Small fixes
 	// 1.0.6 -- Adding support for Docker under DCOS
+	// 1.0.7 -- Adding template support, fixed ACL creation bug, changed initiator prefix
 
 	DRIVER = "Docker-Volume"
 
