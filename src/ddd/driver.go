@@ -257,7 +257,7 @@ func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	m := d.MountPoint(r.Name)
-	log.Debugf("Mounting volume %s on %#v\n", r.Name, m)
+	log.Debugf("Mounting volume %s on %s\n", r.Name, m)
 
 	vol, ok := d.Volumes[m]
 
@@ -288,7 +288,7 @@ func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	m := d.MountPoint(r.Name)
-	log.Debugf("Driver::Unmount: unmounting volume %#v from %#v\n", r.Name, m)
+	log.Debugf("Driver::Unmount: unmounting volume %s from %s\n", r.Name, m)
 
 	if vol, ok := d.Volumes[m]; ok {
 		log.Debugf("Current Connections: %d", vol.Connections)
@@ -299,14 +299,15 @@ func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
 		}
 		vol.DelConnection()
 	} else {
-		return fmt.Errorf("Unable to find volume mounted on %#v", m)
+		vol.ResetConnections()
+		return fmt.Errorf("Unable to find volume mounted on %s", m)
 	}
 
 	return nil
 }
 
 func (d DateraDriver) Capabilities() *dv.CapabilitiesResponse {
-	log.Debugf("DateraDriver.%#v", "Capabilities")
+	log.Debugf("DateraDriver.%s", "Capabilities")
 	// This driver is global scope since created volumes are not bound to the
 	// engine that created them.
 	return &dv.CapabilitiesResponse{Capabilities: dv.Capability{Scope: "global"}}

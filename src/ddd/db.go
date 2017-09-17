@@ -105,11 +105,26 @@ func (v *VolObj) AddConnection() error {
 
 func (v *VolObj) DelConnection() error {
 	log.Debugf("Decrementing connections for volume %s", v.Name)
-	v.Connections--
+	if v.Connections > 0 {
+		v.Connections--
+	} else {
+		log.Debugf("Connections for volume %s is already 0", v.Name)
+		v.Connections = 0
+	}
 	stmt := fmt.Sprintf("UPDATE %s SET %s = ?, %s = datetime('now', 'utc') WHERE %s = ?", VolumeTable, ConnKey, UpdateKey, NameKey)
 	statement, err := _dbcon.Prepare(stmt)
 	panicErr(err)
 	_, err = statement.Exec(v.Connections, v.Name)
+	panicErr(err)
+	return nil
+}
+
+func (v *VolObj) ResetConnections() error {
+	log.Debugf("Resetting connections for volume %s to 0", v.Name)
+	stmt := fmt.Sprintf("UPDATE %s SET %s = ?, %s = datetime('now', 'utc') WHERE %s = ?", VolumeTable, ConnKey, UpdateKey, NameKey)
+	statement, err := _dbcon.Prepare(stmt)
+	panicErr(err)
+	_, err = statement.Exec(0, v.Name)
 	panicErr(err)
 	return nil
 }
