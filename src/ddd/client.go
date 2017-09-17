@@ -381,16 +381,22 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 func doUnmount(destination string, retries int) error {
 	log.Debugf("Unmounting: %s", destination)
 
+	var err error
 	for i := 0; i < retries; i++ {
 		if out, err := ExecC("umount", destination).CombinedOutput(); err != nil {
+			log.Debugf("doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
 			if strings.Contains(string(out), "not mounted") || strings.Contains(string(out), "not currently mounted") {
 				return nil
 			}
-			log.Debugf("doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
 			time.Sleep(time.Second)
 		} else {
 			return nil
 		}
+	}
+
+	if err != nil {
+		log.Errorf("Could not unmount %s within %d seconds, error: %s", destination, retries, err)
+		return err
 	}
 
 	log.Debug("Unmount successful.")
