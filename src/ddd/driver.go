@@ -195,12 +195,22 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 	m := d.MountPoint(r.Name)
 	st := make(map[string]interface{})
 	if s, ok := d.Volumes[m]; ok {
+		// Check to see if we're running under DCOS
+		if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
+			// Check to see if we have a volume with this name
+			if e, _ := d.DateraClient.VolumeExist(r.Name); !e {
+				// Implicitly create volume if we don't have it
+				if err := doImplicitCreate(d, m, r.Name); err != nil {
+					return &dv.GetResponse{}, err
+				}
+			}
+		}
 		return &dv.GetResponse{Volume: &dv.Volume{Name: s.Name, Mountpoint: d.MountPoint(s.Name), Status: st}}, nil
 	}
 	// Handle case where volume exists on Datera array, but we
 	// don't have record of it here (eg it was created by another volume
 	// plugin
-	if e, _ := d.DateraClient.VolumeExist(r.Name); e == true {
+	if e, _ := d.DateraClient.VolumeExist(r.Name); e {
 		m := d.MountPoint(r.Name)
 		diskPath, err := d.DateraClient.LoginVolume(r.Name, m)
 		if err != nil {
@@ -217,30 +227,7 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 		d.Volumes[m] = vol
 		return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: st}}, nil
 	} else if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
-		// We need to create this implicitly since DCOS doesn't support full
-		// volume lifecycle management via Docker
-		var (
-			size          uint64
-			replica       uint64
-			fsType        string
-			maxIops       uint64
-			maxBW         uint64
-			placementMode string
-			template      string
-		)
-		setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template)
-		setDefaults(&fsType, &replica, &placementMode)
-
-		d.Volumes[m] = UpsertVolObj(r.Name, fsType, 0)
-
-		volObj, ok := d.Volumes[m]
-		log.Debugf("volObj: %s, ok: %d", volObj, ok)
-
-		log.Debugf("Sending DCOS IMPLICIT create-volume to datera server.")
-		err := d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
-		if err != nil {
-			return &dv.GetResponse{}, err
-		}
+		doImplicitCreate(d, m, r.Name)
 	}
 	return &dv.GetResponse{}, fmt.Errorf("Unable to find volume mounted on %#v", m)
 }
@@ -353,4 +340,32 @@ func setFromEnvs(size, replica *uint64, fsType *string, maxIops, maxBW *uint64, 
 	*template = os.Getenv(TemplateEnvVar)
 	log.Debugf("Reading values from Environment variables: size %d, replica %d, fsType %s, maxIops %d, maxBW %d, placementMode %s, template %s",
 		*size, *replica, *fsType, *maxIops, *maxBW, *placementMode, *template)
+}
+
+func doImplicitCreate(d DateraDriver, m, name string) error {
+	// We need to create this implicitly since DCOS doesn't support full
+	// volume lifecycle management via Docker
+	var (
+		size          uint64
+		replica       uint64
+		fsType        string
+		maxIops       uint64
+		maxBW         uint64
+		placementMode string
+		template      string
+	)
+	setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template)
+	setDefaults(&fsType, &replica, &placementMode)
+
+	d.Volumes[m] = UpsertVolObj(name, fsType, 0)
+
+	volObj, ok := d.Volumes[m]
+	log.Debugf("volObj: %s, ok: %d", volObj, ok)
+
+	log.Debugf("Sending DCOS IMPLICIT create-volume to datera server.")
+	err := d.DateraClient.CreateVolume(name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
+	if err != nil {
+		return err
+	}
+	return nil
 }
