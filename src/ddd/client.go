@@ -160,9 +160,6 @@ func (r Client) DeleteVolume(name, mountpoint string) error {
 		return err
 	}
 
-	if _, err = ExecC("rmdir", mountpoint).CombinedOutput(); err != nil {
-		log.Warningf("Couldn't remove directory: %s, err: %s", mountpoint, err)
-	}
 	aiep, err := r.Api.GetEp("app_instances").GetEp(name).Get()
 	// If we don't find the app_instance, fail quietly
 	if err != nil {
@@ -386,17 +383,22 @@ func doUnmount(destination string, retries int) error {
 		if out, err := ExecC("umount", destination).CombinedOutput(); err != nil {
 			log.Debugf("doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
 			if strings.Contains(string(out), "not mounted") || strings.Contains(string(out), "not currently mounted") {
-				return nil
+				err = nil
+				break
 			}
 			time.Sleep(time.Second)
 		} else {
-			return nil
+			break
 		}
 	}
 
 	if err != nil {
 		log.Errorf("Could not unmount %s within %d seconds, error: %s", destination, retries, err)
 		return err
+	}
+
+	if _, err = ExecC("rmdir", destination).CombinedOutput(); err != nil {
+		log.Warningf("Couldn't remove directory: %s, err: %s", destination, err)
 	}
 
 	log.Debug("Unmount successful.")

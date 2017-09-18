@@ -210,6 +210,7 @@ All 'dvdi/xxxxx' options must be double-quoted strings
 ```
 PLEASE NOTE: "containerPath" cannot start with a "/", this will break the Mesos
 agent and cause the container spawn to fail
+
 #### For Docker containers
 You cannot specify any Datera specific information in this JSON blob due to a
 limitation in the way DCOS interacts with Mesos and Docker. The relevant
