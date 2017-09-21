@@ -6,8 +6,14 @@ REPONAME=dateraiodev
 
 all:
 	env GOPATH=${GOPATH} go get ${DIRNAME}
-	env GOPATH=${GOPATH} go build -o ${BINNAME} ${DIRNAME}
+	env GOPATH=${GOPATH} go build -ldflags '-extldflags "-static"' -o ${BINNAME} ${DIRNAME}
 	env GOPATH=${GOPATH} go vet ${DIRNAME}
+
+linux:
+	rm -f -- dddbin
+	docker build -t ${IMGNAME} .
+	docker run -d -it --entrypoint "true" ${IMGNAME}
+	docker cp $(shell docker ps -a | grep ${IMGNAME} | head -n 1 | awk '{print $$1}'):/go/docker-driver/dddbin .
 
 fast:
 	env GOPATH=${GOPATH} go get ${DIRNAME}

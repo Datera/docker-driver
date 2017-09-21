@@ -13,29 +13,43 @@ import (
 )
 
 const (
-	DefaultFS        = "ext4"
-	DefaultReplicas  = 3
-	DefaultPlacement = "hybrid"
-	DriverVersion    = "1.0.7"
+	DefaultFS          = "ext4"
+	DefaultReplicas    = 3
+	DefaultPlacement   = "hybrid"
+	DefaultPersistence = "manual"
+	DriverVersion      = "1.0.8"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
 	// 1.0.5 -- Added stateful DB connection tracking.  Small fixes
 	// 1.0.6 -- Adding support for Docker under DCOS
 	// 1.0.7 -- Adding template support, fixed ACL creation bug, changed initiator prefix
+	// 1.0.8 -- Adding persistence mode volume option and bugfixes, updated makefile with 'make linux' option
+	//          added helper DB methods, updated logging and DCOS implicit create support
 
 	DRIVER = "Docker-Volume"
 
+	// Volume Options
+	OptSize        = "size"
+	OptReplica     = "replica"
+	OptTemplate    = "template"
+	OptFstype      = "fsType"
+	OptMaxiops     = "maxIops"
+	OptMaxbw       = "maxBW"
+	OptPlacement   = "placementMode"
+	OptPersistence = "persistenceMode"
+
 	// V2 Volume Plugin static mounts must be under /mnt
-	MountLoc        = "/mnt"
-	FwkEnvVar       = "DATERA_FRAMEWORK"
-	SizeEnvVar      = "DATERA_VOL_SIZE"
-	ReplicaEnvVar   = "DATERA_REPLICAS"
-	PlacementEnvVar = "DATERA_PLACEMENT"
-	MaxIopsEnvVar   = "DATERA_MAX_IOPS"
-	MaxBWEnvVar     = "DATERA_MAX_BW"
-	TemplateEnvVar  = "DATERA_TEMPLATE"
-	FsTypeEnvVar    = "DATERA_FSTYPE"
+	MountLoc       = "/mnt"
+	EnvFwk         = "DATERA_FRAMEWORK"
+	EnvSize        = "DATERA_VOL_SIZE"
+	EnvReplica     = "DATERA_REPLICAS"
+	EnvPlacement   = "DATERA_PLACEMENT"
+	EnvMaxiops     = "DATERA_MAX_IOPS"
+	EnvMaxbw       = "DATERA_MAX_BW"
+	EnvTemplate    = "DATERA_TEMPLATE"
+	EnvFstype      = "DATERA_FSTYPE"
+	EnvPersistence = "DATERA_PERSISTENCE"
 )
 
 type VolumeEntry struct {
@@ -108,7 +122,7 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 	log.Debugf("Checking for existing volume: %s", r.Name)
 	exist, err := d.DateraClient.VolumeExist(r.Name)
 	if err == nil && exist {
-		log.Debugf("Found already created volume: ", r.Name)
+		log.Debugf("Found already created volume: %s", r.Name)
 		return nil
 	}
 	// Quick hack to check if api didn't find a volume
@@ -117,24 +131,25 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 	}
 	log.Debugf("Creating Volume: %s", r.Name)
 
-	size, _ := strconv.ParseUint(volOpts["size"], 10, 64)
-	replica, _ := strconv.ParseUint(volOpts["replica"], 10, 8)
-	template := volOpts["template"]
-	fsType := volOpts["fsType"]
-	maxIops, _ := strconv.ParseUint(volOpts["maxIops"], 10, 64)
-	maxBW, _ := strconv.ParseUint(volOpts["maxBW"], 10, 64)
-	placementMode, _ := volOpts["placementMode"]
+	size, _ := strconv.ParseUint(volOpts[OptSize], 10, 64)
+	replica, _ := strconv.ParseUint(volOpts[OptReplica], 10, 8)
+	template := volOpts[OptTemplate]
+	fsType := volOpts[OptFstype]
+	maxIops, _ := strconv.ParseUint(volOpts[OptMaxiops], 10, 64)
+	maxBW, _ := strconv.ParseUint(volOpts[OptMaxbw], 10, 64)
+	placementMode, _ := volOpts[OptPlacement]
+	persistence, _ := volOpts[OptPersistence]
 
 	// Set values from environment variables if we're running inside
 	// DCOS.  This is only needed if running under Docker.  Running under
 	// Mesos unified containers allows passing these in normally
-	if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
-		setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template)
+	if fwk := os.Getenv(EnvFwk); fwk == "dcos" || fwk == "DCOS" {
+		setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template, &persistence)
 	}
 
-	setDefaults(&fsType, &replica, &placementMode)
+	setDefaults(&fsType, &replica, &placementMode, &persistence)
 
-	d.Volumes[m] = UpsertVolObj(r.Name, fsType, 0)
+	d.Volumes[m] = UpsertVolObj(r.Name, fsType, 0, persistence)
 
 	volObj, ok := d.Volumes[m]
 	log.Debugf("volObj: %s, ok: %d", volObj, ok)
@@ -147,13 +162,13 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 }
 
 func (d DateraDriver) Remove(r *dv.RemoveRequest) error {
-	log.Debugf("DateraDriver.%#v", "Remove")
-	log.Debugf("Removing volume %#v\n", r.Name)
+	log.Debugf("DateraDriver.%s", "Remove")
+	log.Debugf("Removing volume %s", r.Name)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	m := d.MountPoint(r.Name)
 
-	log.Debugf("Remove: mountpoint %#v", m)
+	log.Debugf("Remove: mountpoint %s", m)
 	if vol, ok := d.Volumes[m]; ok {
 		log.Debugf("Remove connection count: %d", vol.Connections)
 		if vol.Connections <= 1 {
@@ -175,7 +190,7 @@ func (d DateraDriver) Remove(r *dv.RemoveRequest) error {
 }
 
 func (d DateraDriver) List() (*dv.ListResponse, error) {
-	log.Debugf("DateraDriver.%#v", "List")
+	log.Debugf("DateraDriver.%s", "List")
 	log.Debugf("Listing volumes: \n")
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -195,41 +210,48 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 	m := d.MountPoint(r.Name)
 	st := make(map[string]interface{})
 	if s, ok := d.Volumes[m]; ok {
+		log.Debugf("In memory volume object found for: %s", r.Name)
 		// Check to see if we're running under DCOS
-		if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
+		if fwk := os.Getenv(EnvFwk); fwk == "dcos" || fwk == "DCOS" {
 			// Check to see if we have a volume with this name
 			if e, _ := d.DateraClient.VolumeExist(r.Name); !e {
 				// Implicitly create volume if we don't have it
-				if err := doImplicitCreate(d, m, r.Name); err != nil {
-					return &dv.GetResponse{}, err
+				log.Debugf("Doing implicit create of volume: %s", r.Name)
+				if err := doImplicitCreate(d, r.Name, m); err != nil {
+					log.Debugf("Mounting implict volume: %s", r.Name)
+					vol, err := doMountStuff(d, r.Name)
+					log.Error(err)
+					return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: st}}, nil
 				}
 			}
 		}
 		return &dv.GetResponse{Volume: &dv.Volume{Name: s.Name, Mountpoint: d.MountPoint(s.Name), Status: st}}, nil
-	}
-	// Handle case where volume exists on Datera array, but we
-	// don't have record of it here (eg it was created by another volume
-	// plugin
-	if e, _ := d.DateraClient.VolumeExist(r.Name); e {
-		m := d.MountPoint(r.Name)
-		diskPath, err := d.DateraClient.LoginVolume(r.Name, m)
+	} else if e, _ := d.DateraClient.VolumeExist(r.Name); e {
+		// Handle case where volume exists on Datera array, but we
+		// don't have record of it here (eg it was created by another volume
+		// plugin
+		vol, err := doMountStuff(d, r.Name)
 		if err != nil {
-			log.Debugf("Couldn't find volume, error: %s", err)
-			return &dv.GetResponse{}, err
+			log.Error(err)
 		}
-		fs, _ := d.DateraClient.FindDeviceFsType(diskPath)
-		// The device was previously created, but there is no filesystem
-		// so we're going to use the default
-		if fs == "" {
-			fs = DefaultFS
-		}
-		vol := UpsertVolObj(r.Name, fs, 0)
-		d.Volumes[m] = vol
 		return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: st}}, nil
-	} else if fwk := os.Getenv(FwkEnvVar); fwk == "dcos" || fwk == "DCOS" {
-		doImplicitCreate(d, m, r.Name)
+	} else if fwk := os.Getenv(EnvFwk); fwk == "dcos" || fwk == "DCOS" {
+		if e, _ := d.DateraClient.VolumeExist(r.Name); !e {
+			log.Debugf("No in-memory volume object found for: %s, doing implicit create", r.Name)
+			err := doImplicitCreate(d, r.Name, m)
+			if err != nil {
+				log.Error(err)
+			}
+		}
+		log.Debugf("Mounting implict volume: %s", r.Name)
+		vol, err := doMountStuff(d, r.Name)
+		if err != nil {
+			log.Error(err)
+		}
+		return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: st}}, nil
+	} else {
+		return &dv.GetResponse{}, fmt.Errorf("Unable to find volume mounted on %s", m)
 	}
-	return &dv.GetResponse{}, fmt.Errorf("Unable to find volume mounted on %#v", m)
 }
 
 func (d DateraDriver) Path(r *dv.PathRequest) (*dv.PathResponse, error) {
@@ -265,7 +287,7 @@ func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
 		return &dv.MountResponse{}, err
 	}
 
-	d.Volumes[m] = UpsertVolObj(r.Name, vol.Filesystem, 1)
+	d.Volumes[m] = UpsertVolObj(r.Name, vol.Filesystem, 1, vol.Persistence)
 
 	return &dv.MountResponse{Mountpoint: m}, nil
 }
@@ -279,10 +301,14 @@ func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
 
 	if vol, ok := d.Volumes[m]; ok {
 		log.Debugf("Current Connections: %d", vol.Connections)
-		if vol.Connections == 1 {
+		if vol.Connections == 1 || vol.Persistence == "auto-delete" {
 			if err := d.DateraClient.UnmountVolume(r.Name, m); err != nil {
 				return err
 			}
+		}
+		if vol.Persistence == "auto-delete" {
+			log.Debugf("Volume %s persistence mode is set to: %s, deleting volume after unmount", r.Name, vol.Persistence)
+			d.DateraClient.DeleteVolume(r.Name, m)
 		}
 		vol.DelConnection()
 	} else {
@@ -304,7 +330,7 @@ func (d DateraDriver) MountPoint(name string) string {
 	return filepath.Join(MountLoc, name)
 }
 
-func setDefaults(fsType *string, replica *uint64, placementMode *string) {
+func setDefaults(fsType *string, replica *uint64, placementMode, persistence *string) {
 	// Set default filesystem to ext4
 	if len(*fsType) == 0 {
 		log.Debugf(
@@ -319,30 +345,35 @@ func setDefaults(fsType *string, replica *uint64, placementMode *string) {
 	}
 	// Set default placement to "hybrid"
 	if *placementMode == "" {
-		log.Debugf("Using default placement value of %d", DefaultPlacement)
+		log.Debugf("Using default placement value of %s", DefaultPlacement)
 		*placementMode = DefaultPlacement
 	}
-	log.Debugf("Setting defaults: fsType %s, replica %d, placementMode %s", fsType, replica, placementMode)
+	// Set persistence to "manual"
+	if *persistence == "" {
+		log.Debugf("Using default persistence value of %s", DefaultPersistence)
+	}
+	log.Debugf("Setting defaults: fsType %s, replica %d, placementMode %s, persistenceMode %s", *fsType, *replica, *placementMode, *persistence)
 }
 
-func setFromEnvs(size, replica *uint64, fsType *string, maxIops, maxBW *uint64, placementMode, template *string) {
-	*size, _ = strconv.ParseUint(os.Getenv(SizeEnvVar), 10, 64)
+func setFromEnvs(size, replica *uint64, fsType *string, maxIops, maxBW *uint64, placementMode, template, persistence *string) {
+	*size, _ = strconv.ParseUint(os.Getenv(EnvSize), 10, 64)
 	if *size == 0 {
 		// We should assume this because other drivers such as REXRAY
 		// default to this behavior for implicit volumes
 		*size = 16
 	}
-	*replica, _ = strconv.ParseUint(os.Getenv(ReplicaEnvVar), 10, 8)
-	*fsType = os.Getenv(FsTypeEnvVar)
-	*maxIops, _ = strconv.ParseUint(os.Getenv(MaxIopsEnvVar), 10, 64)
-	*maxBW, _ = strconv.ParseUint(os.Getenv(MaxBWEnvVar), 10, 64)
-	*placementMode = os.Getenv(PlacementEnvVar)
-	*template = os.Getenv(TemplateEnvVar)
+	*replica, _ = strconv.ParseUint(os.Getenv(EnvReplica), 10, 8)
+	*fsType = os.Getenv(EnvFstype)
+	*maxIops, _ = strconv.ParseUint(os.Getenv(EnvMaxiops), 10, 64)
+	*maxBW, _ = strconv.ParseUint(os.Getenv(EnvMaxbw), 10, 64)
+	*placementMode = os.Getenv(EnvPlacement)
+	*template = os.Getenv(EnvTemplate)
+	*persistence = os.Getenv(EnvPersistence)
 	log.Debugf("Reading values from Environment variables: size %d, replica %d, fsType %s, maxIops %d, maxBW %d, placementMode %s, template %s",
 		*size, *replica, *fsType, *maxIops, *maxBW, *placementMode, *template)
 }
 
-func doImplicitCreate(d DateraDriver, m, name string) error {
+func doImplicitCreate(d DateraDriver, name, m string) error {
 	// We need to create this implicitly since DCOS doesn't support full
 	// volume lifecycle management via Docker
 	var (
@@ -353,11 +384,12 @@ func doImplicitCreate(d DateraDriver, m, name string) error {
 		maxBW         uint64
 		placementMode string
 		template      string
+		persistence   string
 	)
-	setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template)
-	setDefaults(&fsType, &replica, &placementMode)
+	setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template, &persistence)
+	setDefaults(&fsType, &replica, &placementMode, &persistence)
 
-	d.Volumes[m] = UpsertVolObj(name, fsType, 0)
+	d.Volumes[m] = UpsertVolObj(name, fsType, 0, persistence)
 
 	volObj, ok := d.Volumes[m]
 	log.Debugf("volObj: %s, ok: %d", volObj, ok)
@@ -368,4 +400,25 @@ func doImplicitCreate(d DateraDriver, m, name string) error {
 		return err
 	}
 	return nil
+}
+
+func doMountStuff(d DateraDriver, name string) (*VolObj, error) {
+	m := d.MountPoint(name)
+	diskPath, err := d.DateraClient.LoginVolume(name, m)
+	if err != nil {
+		log.Debugf("Couldn't find volume, error: %s", err)
+		return nil, err
+	}
+	fs, _ := d.DateraClient.FindDeviceFsType(diskPath)
+	// The device was previously created, but there is no filesystem
+	// so we're going to use the default
+	if fs == "" {
+		fs = DefaultFS
+	}
+	// Our persistence mode is 'manual' because if the driver didn't already
+	// know about it, that implies it existed previously and shouldn't be
+	// removed on unmount
+	vol := UpsertVolObj(name, fs, 0, "manual")
+	d.Volumes[m] = vol
+	return vol, err
 }

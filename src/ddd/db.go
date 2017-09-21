@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	VolumeTable = "volumes"
-	NameKey     = "name"
-	FsKey       = "filesystem"
-	ConnKey     = "connections"
-	UpdateKey   = "updated_at"
+	VolumeTable    = "volumes"
+	NameKey        = "name"
+	FsKey          = "filesystem"
+	PersistenceKey = "persistence_mode"
+	ConnKey        = "connections"
+	UpdateKey      = "updated_at"
 )
 
 // Shared DB connection
@@ -25,6 +26,7 @@ type VolObj struct {
 	Name        string
 	Filesystem  string
 	Connections int
+	Persistence string
 	UpdatedAt   string
 }
 
@@ -39,8 +41,8 @@ func prepareDB() {
 	panicErr(err)
 	// Create initial table if it hasn't been created
 	log.Debugf("Creating initial table '%s' if it doesn't exist", VolumeTable)
-	stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT, %s INTEGER, %s DATETIME DEFAULT CURRENT_TIMESTAMP);",
-		VolumeTable, NameKey, FsKey, ConnKey, UpdateKey)
+	stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT, %s INTEGER, %s TEXT, %s DATETIME DEFAULT CURRENT_TIMESTAMP);",
+		VolumeTable, NameKey, FsKey, ConnKey, PersistenceKey, UpdateKey)
 	statement, err := database.Prepare(stmt)
 	panicErr(err)
 	_, err = statement.Exec()
@@ -55,7 +57,7 @@ func getVolObj(name string) *VolObj {
 	v := &VolObj{}
 	stmt := fmt.Sprintf("SELECT * FROM %s WHERE %s = ?;", VolumeTable, NameKey)
 	row := _dbcon.QueryRow(stmt, name)
-	if err := row.Scan(&v.Name, &v.Filesystem, &v.Connections, &v.UpdatedAt); err != nil {
+	if err := row.Scan(&v.Name, &v.Filesystem, &v.Connections, &v.Persistence, &v.UpdatedAt); err != nil {
 		if err != sql.ErrNoRows {
 			panicErr(err)
 		}
@@ -64,28 +66,28 @@ func getVolObj(name string) *VolObj {
 	return v
 }
 
-func UpsertVolObj(name, filesystem string, connections int) *VolObj {
+func UpsertVolObj(name, filesystem string, connections int, persistence string) *VolObj {
 	// See if we already have a db record
-	tmpv := &VolObj{name, filesystem, connections, ""}
+	tmpv := &VolObj{name, filesystem, connections, persistence, ""}
 	v := getVolObj(name)
 	if v.Name == "" {
 		log.Debugf("Creating new volume object: %s", name)
 		// If we didn't have a record, we'll create a new one
-		stmt := fmt.Sprintf("INSERT INTO %s (%s, %s, %s) VALUES (?1, ?2, ?3);",
-			VolumeTable, NameKey, FsKey, ConnKey)
+		stmt := fmt.Sprintf("INSERT INTO %s (%s, %s, %s, %s) VALUES (?1, ?2, ?3, ?4);",
+			VolumeTable, NameKey, FsKey, ConnKey, PersistenceKey)
 		statement, err := _dbcon.Prepare(stmt)
 		panicErr(err)
-		_, err = statement.Exec(name, filesystem, connections)
+		_, err = statement.Exec(name, filesystem, connections, persistence)
 		panicErr(err)
 		v = tmpv
 	} else if v != tmpv {
 		log.Debugf("Volume object attributes do not match, updating database: %s", name)
 		// Something didn't match, update the whole object with provided values
-		stmt := fmt.Sprintf("UPDATE %s SET %s = ?1, %s = ?2 WHERE %s = ?3",
-			VolumeTable, FsKey, ConnKey, NameKey)
+		stmt := fmt.Sprintf("UPDATE %s SET %s = ?1, %s = ?2, %s = ?3 WHERE %s = ?4",
+			VolumeTable, FsKey, ConnKey, PersistenceKey, NameKey)
 		statement, err := _dbcon.Prepare(stmt)
 		panicErr(err)
-		_, err = statement.Exec(filesystem, connections, name)
+		_, err = statement.Exec(filesystem, connections, persistence, name)
 		panicErr(err)
 		v = tmpv
 	}
@@ -105,17 +107,26 @@ func (v *VolObj) AddConnection() error {
 
 func (v *VolObj) DelConnection() error {
 	log.Debugf("Decrementing connections for volume %s", v.Name)
-	if v.Connections > 0 {
-		v.Connections--
+	if v.Persistence == "manual" {
+		if v.Connections > 0 {
+			v.Connections--
+		} else {
+			log.Debugf("Connections for volume %s is already 0", v.Name)
+			v.Connections = 0
+		}
+		stmt := fmt.Sprintf("UPDATE %s SET %s = ?, %s = datetime('now', 'utc') WHERE %s = ?", VolumeTable, ConnKey, UpdateKey, NameKey)
+		statement, err := _dbcon.Prepare(stmt)
+		panicErr(err)
+		_, err = statement.Exec(v.Connections, v.Name)
+		panicErr(err)
 	} else {
-		log.Debugf("Connections for volume %s is already 0", v.Name)
-		v.Connections = 0
+		log.Debugf("Volume %s is non-persistent, deleting entry", v.Name)
+		stmt := fmt.Sprintf("DELETE from %s WHERE %s = ?", VolumeTable, NameKey)
+		statement, err := _dbcon.Prepare(stmt)
+		panicErr(err)
+		_, err = statement.Exec(v.Name)
+		panicErr(err)
 	}
-	stmt := fmt.Sprintf("UPDATE %s SET %s = ?, %s = datetime('now', 'utc') WHERE %s = ?", VolumeTable, ConnKey, UpdateKey, NameKey)
-	statement, err := _dbcon.Prepare(stmt)
-	panicErr(err)
-	_, err = statement.Exec(v.Connections, v.Name)
-	panicErr(err)
 	return nil
 }
 

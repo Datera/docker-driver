@@ -21,7 +21,7 @@ def main():
                 pass
         else:
             try:
-                print(json.loads(json.loads(line), indent=4))
+                print(json.dumps(json.loads(line), indent=4))
             except ValueError:
                 pass
 

@@ -124,14 +124,15 @@ func main() {
 	}
 
 	if *showenvs {
-		fmt.Println(FwkEnvVar, ": Datera framework.  Set to 'dcos' if running under DC/OS")
-		fmt.Println(SizeEnvVar, ": Datera volume size")
-		fmt.Println(ReplicaEnvVar, ": Datera volume replica count")
-		fmt.Println(PlacementEnvVar, ": Datera volume placement mode")
-		fmt.Println(MaxIopsEnvVar, ": Datera volume max iops")
-		fmt.Println(MaxBWEnvVar, ": Datera volume max bandwidth")
-		fmt.Println(TemplateEnvVar, ": Datera volume template")
-		fmt.Println(FsTypeEnvVar, ": Datera volume filesystem, eg: ext4")
+		fmt.Println(EnvFwk, ": Datera framework.  Set to 'dcos' if running under DC/OS")
+		fmt.Println(EnvSize, ": Datera volume size")
+		fmt.Println(EnvReplica, ": Datera volume replica count")
+		fmt.Println(EnvPlacement, ": Datera volume placement mode")
+		fmt.Println(EnvMaxiops, ": Datera volume max iops")
+		fmt.Println(EnvMaxbw, ": Datera volume max bandwidth")
+		fmt.Println(EnvTemplate, ": Datera volume template")
+		fmt.Println(EnvFstype, ": Datera volume filesystem, eg: ext4")
+		fmt.Println(EnvPersistence, ": Datera volume filesystem, eg: ext4")
 		os.Exit(0)
 	}
 

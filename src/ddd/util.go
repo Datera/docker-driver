@@ -49,7 +49,8 @@ type ReadFile func(f string) ([]byte, error)
 
 func panicErr(err error) {
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		panic(err)
 	}
 }
 

@@ -43,8 +43,10 @@ func (r Client) VolumeExist(name string) (bool, error) {
 	log.Debugf("VolumeExist invoked for %s", name)
 	_, err := r.Api.GetEp("app_instances").GetEp(name).Get()
 	if err != nil {
+		log.Debugf("Volume %s not found", name)
 		return false, err
 	}
+	log.Debugf("Volume %s found", name)
 	return true, nil
 }
 
@@ -192,6 +194,10 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 	volUUID := (*mySi.Volumes)[0].Uuid
 
 	ips := mySi.Access["ips"].([]interface{})
+
+	if len(ips) < 1 {
+		return "", "", "", fmt.Errorf("No IPs available for volume: %s", name)
+	}
 	portal := ips[0].(string)
 	iqn := mySi.Access["iqn"].(string)
 
@@ -232,7 +238,7 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 	}
 	iqn, portal, _, err := r.GetIQNandPortal(name)
 	if err != nil {
-		log.Debugf("Unable to find IQN and portal for %#v.", name)
+		log.Debugf("Unable to find IQN and portal for %s.", name)
 		return "", err
 	}
 	// Make sure we're authorized to access the volume

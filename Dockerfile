@@ -24,4 +24,4 @@ RUN mkdir -p /var/lib/docker-volumes/_datera && \
     touch /run/docker/plugins/datera.sock \
     /usr/sbin/iscsid
 
-ENTRYPOINT [ "/bin/sh", "-c", "/usr/sbin/iscsid; /go/docker-driver/dddbin > dddbin.log" ]
+ENTRYPOINT [ "/bin/sh", "-c", "/usr/sbin/iscsid; /go/docker-driver/dddbin | tee dddbin.log" ]
