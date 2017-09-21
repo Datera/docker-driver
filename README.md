@@ -7,15 +7,15 @@ There are two ways to use this plugin
 ## Easy Installation (Docker v1.13+ required)
 
 Run this on each node that should use the Datera volume driver
-```
+```bash
 $ sudo docker install dateraio/datera
 ```
 Before enabling the plugin, create the configuration file
-```
+```bash
 $ sudo touch /root/.datera-config-file
 ```
 This is a JSON file with the following structure:
-```
+```json
 {
     "datera-cluster": "1.1.1.1",
     "username": "my-user",
@@ -28,12 +28,12 @@ This is a JSON file with the following structure:
 ```
 Update the config file with the relevant information for the cluster then
 run the following:
-```
+```bash
 $ sudo docker plugin enable dateraiodev/docker-driver
 ```
 
 Install udev rules on each docker node (from the scripts directory)
-```
+```bash
 sudo ./install_udev_rules.py
 ```
 
@@ -42,25 +42,25 @@ WHEN USING THE PLUGIN INSTALLATION METHOD YOU MUST REFER TO THE DRIVER BY
 THE FORM "repository/image" NOT JUST "image"
 
 Create a volume
-```
+```bash
 $ sudo docker volume create --name my-vol --driver dateraiodev/docker-driver --opt size=5
 ```
 
 Start your docker containers with the option `--volume-driver=dateraiodev/docker-driver` and use the first part of `--volume` to specify the remote volume that you want to connect to:
-```
+```bash
 $ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
 
 ## The Hard Way (building from source, not recommended)
 
 ### Building
-```
+```bash
 $ make
 ```
 
 ### Running Unit Tests
 
-```
+```bash
 $ make test
 ```
 
@@ -69,7 +69,7 @@ $ make test
 {Update with binary location when we have one}
 
 Install udev rules on each docker/mesos node
-```
+```bash
 sudo ./scripts/install_udev_rules.py
 ```
 
@@ -78,7 +78,7 @@ sudo ./scripts/install_udev_rules.py
 This plugin doesn't create volumes in your Datera cluster yet, so you'll have to create them yourself first.
 
 1 - Create the config file
-```
+```bash
 $ sudo touch /root/.datera-config-file
 ```
 This is a JSON file with the following structure:
@@ -96,17 +96,17 @@ This is a JSON file with the following structure:
 Fill out the cluster info in the config file
 
 2 - Start the plugin using this command:
-```
+```bash
 $ sudo ./dddbin
 ```
 
 3a - Create a volume
-```
+```bash
 $ sudo docker volume create --name my-vol --driver datera --opt size=5
 ```
 
 3b - Start your docker containers with the option `--volume-driver=dateraiodev/docker-driver` and use the first part of `--volume` to specify the remote volume that you want to connect to:
-```
+```bash
 $ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
 
@@ -121,17 +121,17 @@ It also means there are a few wonky behaviors when using the external volume sup
 DCOS.  You can read more about that here: https://dcos.io/docs/1.10/storage/external-storage/#potential-pitfalls
 
 ### Build the driver
-```
-make
+```bash
+$ make
 ```
 
 ### Copy the driver to all relevant Mesos Agent nodes
-```
-scp -i ~/your_ssh_key dddbin user@agent-node:/some/location/dddbin
+```bash
+$ scp -i ~/your_ssh_key dddbin user@agent-node:/some/location/dddbin
 ```
 
 ### Create config file
-```
+```bash
 $ sudo touch datera-config-file.txt
 ```
 This is a JSON file with the following structure:
@@ -147,22 +147,22 @@ This is a JSON file with the following structure:
 }
 ```
 ### Copy config file to all relevant Mesos Agent nodes
-```
+```bash
 scp -i ~/your_ssh_key datera-config-file.txt user@agent-node:/some/location/dddbin
 ```
 
 ### Start the driver with the config file
 #### For Mesos Container nodes
-```
+```bash
 sudo ./dddbin -config datera-config-template.txt
 ```
 
 #### For Docker Container nodes
-```
+```bash
 sudo env DATERA_FRAMEWORK=dcos DATERA_VOL_SIZE=33 ./dddbin -config datera-config-template.txt
 ```
 The following environment variables are available to use for Docker container nodes
-```
+```bash
 DATERA_FRAMEWORK=dcos
 DATERA_VOL_SIZE=XX
 DATERA_REPLICAS=X
