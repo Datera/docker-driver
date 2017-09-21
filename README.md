@@ -111,7 +111,14 @@ $ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/
 ```
 
 
-## DCOS/MESOSPHERE Instructions
+# DCOS/MESOSPHERE Instructions
+
+## CAVEATS
+Currently DCOS and Mesos are very early in their external persistent volume support.
+Because of this, their volume lifecycle is simpler than other ecosystems.  This means
+only a subset of the Datera product functionality is available through DCOS and Mesos.
+It also means there are a few wonky behaviors when using the external volume support for
+DCOS.  You can read more about that here: https://dcos.io/docs/1.10/storage/external-storage/#potential-pitfalls
 
 ### Build the driver
 ```
@@ -171,7 +178,43 @@ CONTAINER USING DATERA STORAGE WILL USE THIS VALUE.  Mesos containers are
 unaffected
 
 ### Create a service with Datera storage
-#### For Mesos containers
+#### Simple Mesos container setup
+{
+  "id": "test-datera-2",
+  "instances": 1,
+  "cpus": 0.1,
+  "mem": 32,
+  "cmd": "/bin/cat /dev/urandom > mesos-test/test.img",
+  "container": {
+    "type": "MESOS",
+    "volumes": [
+      {
+        "containerPath": "mesos-test",
+        "external": {
+          "name": "datera-mesos-test-volume",
+          "provider": "dvdi",
+          "options": {
+            "dvdi/driver": "datera",
+            }
+        },
+        "mode": "RW"
+      }
+    ]
+  },
+  "upgradeStrategy": {
+    "minimumHealthCapacity": 0,
+    "maximumOverCapacity": 0
+  }
+}
+
+The easiest way to generate this JSON config is to go to the DCOS UI
+and create a new container with an external volume.  Then switch
+"dvdi/driver": "rexray" --> "dvdi/driver": "datera"
+
+The default size for a volume created without providing a "dvdi/size"
+parameter is 16GB
+
+#### More Complex Mesos Container
 All 'dvdi/xxxxx' options must be double-quoted strings
 ```
 {
@@ -179,7 +222,7 @@ All 'dvdi/xxxxx' options must be double-quoted strings
   "instances": 1,
   "cpus": 0.1,
   "mem": 32,
-  "cmd": "/usr/bin/tail -f /dev/null",
+  "cmd": "/bin/cat /dev/urandom > mesos-test/test.img"
   "container": {
     "type": "MESOS",
     "volumes": [
