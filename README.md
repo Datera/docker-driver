@@ -82,7 +82,7 @@ This plugin doesn't create volumes in your Datera cluster yet, so you'll have to
 $ sudo touch /root/.datera-config-file
 ```
 This is a JSON file with the following structure:
-```
+```json
 {
     "datera-cluster": "1.1.1.1",
     "username": "my-user",
@@ -135,7 +135,7 @@ scp -i ~/your_ssh_key dddbin user@agent-node:/some/location/dddbin
 $ sudo touch datera-config-file.txt
 ```
 This is a JSON file with the following structure:
-```
+```json
 {
     "datera-cluster": "1.1.1.1",
     "username": "my-user",
@@ -179,6 +179,7 @@ unaffected
 
 ### Create a service with Datera storage
 #### Simple Mesos container setup
+```json
 {
   "id": "test-datera-2",
   "instances": 1,
@@ -206,6 +207,7 @@ unaffected
     "maximumOverCapacity": 0
   }
 }
+```
 
 The easiest way to generate this JSON config is to go to the DCOS UI
 and create a new container with an external volume.  Then switch
@@ -216,7 +218,7 @@ parameter is 16GB
 
 #### More Complex Mesos Container
 All 'dvdi/xxxxx' options must be double-quoted strings
-```
+```json
 {
   "id": "test-datera-2",
   "instances": 1,
@@ -259,7 +261,7 @@ You cannot specify any Datera specific information in this JSON blob due to a
 limitation in the way DCOS interacts with Mesos and Docker. The relevant
 options must be specified during driver instantiation time via the environment
 variables shown in an earlier section.
-```
+```json
 {
   "id": "test-datera-docker",
   "instances": 1,
