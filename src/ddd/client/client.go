@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"fmt"
@@ -7,18 +7,17 @@ import (
 	"syscall"
 	"time"
 
+	co "ddd/common"
 	dsdk "github.com/Datera/go-sdk/src/dsdk"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	VERSION       = "2.1.2"
 	initiatorFile = "/etc/iscsi/initiatorname.iscsi"
 	rBytes        = "0123456789abcdef"
 	StorageName   = "storage-1"
 	VolumeName    = "volume-1"
 	IGPrefix      = "Docker-Driver-"
-	DatabaseFile  = ".clientdb"
 )
 
 type Client struct {
@@ -29,8 +28,8 @@ type Client struct {
 func NewClient(addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	headers := make(map[string]string)
 	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "ddd.log", true)
-	panicErr(err)
-	prepareDB()
+	co.PanicErr(err)
+	co.PrepareDB()
 	client := &Client{
 		Api:   Api,
 		Debug: debug,
@@ -55,13 +54,16 @@ func (r Client) CreateVolume(name string, size int, replica int, template string
 		name, size, replica, template, maxIops, maxBW, placementMode)
 	var ai dsdk.AppInstance
 	if template != "" {
+		template = strings.Trim(template, "/")
+		log.Debugf("Creating AppInstance with template: %s", template)
 		at := dsdk.AppTemplate{
-			Name: template,
+			Path: "/app_templates/" + template,
 		}
 		ai = dsdk.AppInstance{
 			Name:        name,
 			AppTemplate: &at,
 		}
+		log.Debugf("AI: %#v", ai)
 	} else {
 		vol := dsdk.Volume{
 			Name:          VolumeName,
@@ -102,7 +104,7 @@ func (r Client) CreateVolume(name string, size int, replica int, template string
 func (r Client) CreateACL(name string, random bool) error {
 	log.Debugf("CreateACL invoked for %s", name)
 	// Parse InitiatorName
-	dat, err := FileReader(initiatorFile)
+	dat, err := co.FileReader(initiatorFile)
 	if err != nil {
 		log.Debugf("Could not read file %s", initiatorFile)
 		return err
@@ -199,6 +201,9 @@ func (r Client) GetIQNandPortal(name string) (string, string, string, error) {
 		return "", "", "", fmt.Errorf("No IPs available for volume: %s", name)
 	}
 	portal := ips[0].(string)
+	if _, ok := mySi.Access["iqn"]; !ok {
+		return "", "", "", fmt.Errorf("No IQN available for volume: %s", name)
+	}
 	iqn := mySi.Access["iqn"].(string)
 
 	log.Debugf("iqn: %s, portal: %s, volume-uuid: %s", iqn, portal, volUUID)
@@ -210,7 +215,7 @@ func (r Client) FindDeviceFsType(diskPath string) (string, error) {
 
 	var out []byte
 	var err error
-	if out, err = ExecC("blkid", diskPath).CombinedOutput(); err != nil {
+	if out, err = co.ExecC("blkid", diskPath).CombinedOutput(); err != nil {
 		log.Debugf("Error finding FsType: %s, out: %s", err, out)
 		return "", err
 	}
@@ -225,9 +230,9 @@ func (r Client) FindDeviceFsType(diskPath string) (string, error) {
 
 func (r Client) LoginVolume(name string, destination string) (string, error) {
 	log.Debugf("LoginVolume invoked for: %s", name)
-	fi, err := OS.Lstat(destination)
-	if OS.IsNotExist(err) {
-		if err := OS.MkdirAll(destination, 0755); err != nil {
+	fi, err := co.OS.Lstat(destination)
+	if co.OS.IsNotExist(err) {
+		if err := co.OS.MkdirAll(destination, 0755); err != nil {
 			return "", err
 		}
 	} else if err != nil {
@@ -236,10 +241,24 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 	if fi != nil && !fi.IsDir() {
 		return "", fmt.Errorf("%s already exist and it's not a directory", destination)
 	}
-	iqn, portal, _, err := r.GetIQNandPortal(name)
-	if err != nil {
-		log.Debugf("Unable to find IQN and portal for %s.", name)
-		return "", err
+	var (
+		timeout = 10
+		iqn     string
+		portal  string
+	)
+	for {
+		iqn, portal, _, err = r.GetIQNandPortal(name)
+		if err != nil {
+			if timeout <= 0 {
+				log.Debugf("Unable to find IQN and portal for %s.", name)
+				return "", err
+			} else {
+				timeout--
+				time.Sleep(time.Second)
+			}
+		} else {
+			break
+		}
 	}
 	// Make sure we're authorized to access the volume
 	err = r.CreateACL(name, false)
@@ -248,7 +267,7 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 		return "", err
 	}
 
-	timeout := 10
+	timeout = 10
 	var diskPath string
 	for {
 		diskPath, err = doLogin(name, portal, iqn)
@@ -285,13 +304,13 @@ func doLogin(name, portal, iqn string) (string, error) {
 	}
 
 	if out, err :=
-		ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
+		co.ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
 		log.Debugf("Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
 		return "", err
 	}
 
 	if out, err :=
-		ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
+		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
 		log.Debugf("Unable to login to target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
@@ -318,7 +337,7 @@ func (r Client) MountVolume(name, destination, fsType, diskPath string) error {
 	}
 
 	// Mount the disk now to the destination
-	if err := OS.MkdirAll(destination, 0750); err != nil {
+	if err := co.OS.MkdirAll(destination, 0750); err != nil {
 		log.Errorf("failed to create destination directory: %s", destination)
 		return err
 	}
@@ -339,10 +358,10 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 		fsType,
 		mountOptions)
 
-	ExecC("fsck", "-a", sourceDisk).CombinedOutput()
+	co.ExecC("fsck", "-a", sourceDisk).CombinedOutput()
 
 	if out, err :=
-		ExecC("mount", "-t", fsType,
+		co.ExecC("mount", "-t", fsType,
 			"-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
 		log.Warningf("mount failed for volume: %s. output: %s, error: %s", sourceDisk, string(out), err)
 		log.Infof("Checking for disk formatting: %s", sourceDisk)
@@ -350,20 +369,20 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 		if fsType == "ext4" {
 			log.Debugf("ext4 block fsType: %s", fsType)
 			_, err =
-				ExecC("mkfs."+fsType, "-E",
+				co.ExecC("mkfs."+fsType, "-E",
 					"lazy_itable_init=0,lazy_journal_init=0,nodiscard", "-F", sourceDisk).CombinedOutput()
 		} else if fsType == "xfs" {
 			log.Debugf("fsType: %s", fsType)
 			_, err =
-				ExecC("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
+				co.ExecC("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
 		} else {
 			log.Debugf("fsType: %s", fsType)
 			_, err =
-				ExecC("mkfs."+fsType, sourceDisk).CombinedOutput()
+				co.ExecC("mkfs."+fsType, sourceDisk).CombinedOutput()
 		}
 		if err == nil {
 			log.Debug("Done with formatting, mounting again.")
-			if _, err := ExecC("mount", "-t", fsType,
+			if _, err := co.ExecC("mount", "-t", fsType,
 				"-o", strings.Join(mountOptions, ","),
 				sourceDisk, destination).CombinedOutput(); err != nil {
 				log.Errorf("Error in mounting. Error: %s", err)
@@ -386,7 +405,7 @@ func doUnmount(destination string, retries int) error {
 
 	var err error
 	for i := 0; i < retries; i++ {
-		if out, err := ExecC("umount", destination).CombinedOutput(); err != nil {
+		if out, err := co.ExecC("umount", destination).CombinedOutput(); err != nil {
 			log.Debugf("doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
 			if strings.Contains(string(out), "not mounted") || strings.Contains(string(out), "not currently mounted") {
 				err = nil
@@ -403,7 +422,7 @@ func doUnmount(destination string, retries int) error {
 		return err
 	}
 
-	if _, err = ExecC("rmdir", destination).CombinedOutput(); err != nil {
+	if _, err = co.ExecC("rmdir", destination).CombinedOutput(); err != nil {
 		log.Warningf("Couldn't remove directory: %s, err: %s", destination, err)
 	}
 
@@ -414,13 +433,13 @@ func doUnmount(destination string, retries int) error {
 
 func waitForDisk(diskPath string, retries int) bool {
 	for i := 0; i < retries; i++ {
-		_, err := OS.Stat(diskPath)
+		_, err := co.OS.Stat(diskPath)
 		if err == nil {
 			log.Debugf("Disk Available: %s", diskPath)
 			return true
 		}
 
-		if err != nil && !OS.IsNotExist(err) {
+		if err != nil && !co.OS.IsNotExist(err) {
 			log.Error(err)
 			return false
 		}
@@ -438,12 +457,12 @@ func waitForDisk(diskPath string, retries int) bool {
 var IsAlreadyMounted = _isAlreadyMounted
 
 func _isAlreadyMounted(destination string) (bool, error) {
-	destStat, err := OS.Stat(destination)
+	destStat, err := co.OS.Stat(destination)
 	if err != nil {
 		return false, err
 	}
 
-	parentDirStat, err := OS.Lstat(destination + "/..")
+	parentDirStat, err := co.OS.Lstat(destination + "/..")
 	if err != nil {
 		return false, err
 	}
@@ -469,7 +488,7 @@ func (r Client) UnmountVolume(name string, destination string) error {
 	}
 
 	if out, err :=
-		ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
+		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
 		log.Errorf("Unable to logout target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,

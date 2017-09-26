@@ -1,4 +1,4 @@
-package main
+package common
 
 import (
 	"os"
@@ -47,7 +47,7 @@ func (s System) MkdirAll(f string, o os.FileMode) error {
 
 type ReadFile func(f string) ([]byte, error)
 
-func panicErr(err error) {
+func PanicErr(err error) {
 	if err != nil {
 		log.Error(err)
 		panic(err)

@@ -12,8 +12,7 @@ all:
 linux:
 	rm -f -- dddbin
 	docker build -t ${IMGNAME} .
-	docker run -d -it --entrypoint "true" ${IMGNAME}
-	docker cp $(shell docker ps -a | grep ${IMGNAME} | head -n 1 | awk '{print $$1}'):/go/docker-driver/dddbin .
+	docker cp $(shell docker run -d -it --entrypoint "true" ${IMGNAME}):/go/docker-driver/dddbin .
 
 fast:
 	env GOPATH=${GOPATH} go get ${DIRNAME}

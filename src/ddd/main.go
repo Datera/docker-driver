@@ -10,6 +10,8 @@ import (
 	"path"
 	"strconv"
 
+	co "ddd/common"
+	dd "ddd/driver"
 	dv "github.com/docker/go-plugins-helpers/volume"
 	stack "github.com/gurpartap/logrus-stack"
 	log "github.com/sirupsen/logrus"
@@ -119,20 +121,20 @@ func main() {
 	log.AddHook(stack.StandardHook())
 	flag.Parse()
 	if *version {
-		fmt.Printf("Version: %s\n", DRIVER+"-"+DriverVersion)
+		fmt.Printf("Version: %s\n", dd.DRIVER+"-"+dd.DriverVersion)
 		os.Exit(0)
 	}
 
 	if *showenvs {
-		fmt.Println(EnvFwk, ": Datera framework.  Set to 'dcos' if running under DC/OS")
-		fmt.Println(EnvSize, ": Datera volume size")
-		fmt.Println(EnvReplica, ": Datera volume replica count")
-		fmt.Println(EnvPlacement, ": Datera volume placement mode")
-		fmt.Println(EnvMaxiops, ": Datera volume max iops")
-		fmt.Println(EnvMaxbw, ": Datera volume max bandwidth")
-		fmt.Println(EnvTemplate, ": Datera volume template")
-		fmt.Println(EnvFstype, ": Datera volume filesystem, eg: ext4")
-		fmt.Println(EnvPersistence, ": Datera volume filesystem, eg: ext4")
+		fmt.Println(dd.EnvFwk, ": Datera framework.  Set to 'dcos' if running under DC/OS")
+		fmt.Println(dd.EnvSize, ": Datera volume size")
+		fmt.Println(dd.EnvReplica, ": Datera volume replica count")
+		fmt.Println(dd.EnvPlacement, ": Datera volume placement mode")
+		fmt.Println(dd.EnvMaxiops, ": Datera volume max iops")
+		fmt.Println(dd.EnvMaxbw, ": Datera volume max bandwidth")
+		fmt.Println(dd.EnvTemplate, ": Datera volume template")
+		fmt.Println(dd.EnvFstype, ": Datera volume filesystem, eg: ext4")
+		fmt.Println(dd.EnvPersistence, ": Datera volume filesystem, eg: ext4")
 		os.Exit(0)
 	}
 
@@ -168,10 +170,10 @@ func main() {
 		conf.DateraCluster, conf.Username, "*******")
 
 	// Overriding these so tests can replace them
-	OS = System{}
-	FileReader = ioutil.ReadFile
+	co.OS = co.System{}
+	co.FileReader = ioutil.ReadFile
 
-	d := NewDateraDriver(conf.DateraCluster, conf.Username, conf.Password, conf.Tenant, conf.Debug, !conf.Ssl)
+	d := dd.NewDateraDriver(conf.DateraCluster, conf.Username, conf.Password, conf.Tenant, conf.Debug, !conf.Ssl)
 	h := dv.NewHandler(d)
 	u, err := user.Lookup(conf.OsUser)
 	if err != nil {
