@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "1.1.0"
+	DriverVersion      = "1.1.1"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -30,6 +30,7 @@ const (
 	// 1.0.8 -- Adding persistence mode volume option and bugfixes, updated makefile with 'make linux' option
 	//          added helper DB methods, updated logging and DCOS implicit create support
 	// 1.1.0 -- Reorg into subpackages.  Bugfixes and implicit creation logic changes
+	// 1.1.1 -- Multipathing update.  Switched iscsi login discover back to using /by-uuid/
 
 	DRIVER = "Docker-Volume"
 
@@ -42,6 +43,9 @@ const (
 	OptMaxbw       = "maxBW"
 	OptPlacement   = "placementMode"
 	OptPersistence = "persistenceMode"
+	// TODO(mss): add a clone_src opt so we can specify a clone rather than a
+	// new volume creation
+	OptCloneSrc = "cloneSrcNotUsedYet"
 
 	// V2 Volume Plugin static mounts must be under /mnt
 	MountLoc       = "/mnt"
@@ -69,7 +73,7 @@ type IClient interface {
 	MountVolume(string, string, string, string) error
 	UnmountVolume(string, string) error
 	DetachVolume(string) error
-	GetIQNandPortal(string) (string, string, string, error)
+	GetIQNandPortals(string) (string, []string, string, error)
 	FindDeviceFsType(string) (string, error)
 }
 
@@ -409,11 +413,16 @@ func doMount(d DateraDriver, name, pmode, fs string) (*co.VolObj, error) {
 		return nil, err
 	}
 	newfs, _ := d.DateraClient.FindDeviceFsType(diskPath)
+	newfs = strings.TrimSpace(newfs)
+	fs = strings.TrimSpace(fs)
 	// The device was previously created, but there is no filesystem
 	// so we're going to use the default
 	if newfs == "" && fs == "" {
 		log.Debugf("Couldn't detect fs and parameter fs is not set for volume: %s", name)
 		fs = DefaultFS
+	} else if fs == "" && newfs != "" {
+		log.Debugf("Setting volume: %s fs to detected type: %s", name, newfs)
+		fs = newfs
 	}
 	vol := co.UpsertVolObj(name, fs, 0, pmode)
 	if err = d.DateraClient.MountVolume(name, m, fs, diskPath); err != nil {
