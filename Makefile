@@ -11,7 +11,7 @@ all:
 
 linux:
 	rm -f -- dddbin
-	docker build -t ${IMGNAME} .
+	docker build --no-cache -t ${IMGNAME} .
 	docker cp $(shell docker run -d -it --entrypoint "true" ${IMGNAME}):/go/docker-driver/dddbin .
 
 fast:
