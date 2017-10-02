@@ -58,6 +58,7 @@ const (
 	EnvTemplate    = "DATERA_TEMPLATE"
 	EnvFstype      = "DATERA_FSTYPE"
 	EnvPersistence = "DATERA_PERSISTENCE"
+	EnvCloneSrc    = "DATERA_CLONE_SRC"
 
 	// Misc
 	DeleteConst = "auto"
@@ -67,7 +68,7 @@ const (
 // so we can mock DateraClient out more easily
 type IClient interface {
 	VolumeExist(string) (bool, error)
-	CreateVolume(string, int, int, string, int, int, string) error
+	CreateVolume(string, *dc.VolOpts) error
 	DeleteVolume(string, string) error
 	LoginVolume(string, string) (string, error)
 	MountVolume(string, string, string, string) error
@@ -114,6 +115,8 @@ func NewDateraDriver(restAddress, username, password, tenant string, debug, noSs
 //  maxIops
 //  maxBW
 //  placementMode -- Default: hybrid
+//  persistenceMode -- Default: manual
+//  cloneSrc
 func (d DateraDriver) Create(r *dv.CreateRequest) error {
 	log.Debugf("DateraDriver.%s", "Create")
 	log.Debugf("Creating volume %s\n", r.Name)
@@ -144,22 +147,35 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 	maxBW, _ := strconv.ParseUint(volOpts[OptMaxbw], 10, 64)
 	placementMode, _ := volOpts[OptPlacement]
 	persistence, _ := volOpts[OptPersistence]
+	cloneSrc, _ := volOpts[OptCloneSrc]
+
+	vOpts := dc.VolOpts{
+		size,
+		replica,
+		template,
+		fsType,
+		maxIops,
+		maxBW,
+		placementMode,
+		persistence,
+		cloneSrc,
+	}
 
 	// Set values from environment variables if we're running inside
 	// DCOS.  This is only needed if running under Docker.  Running under
 	// Mesos unified containers allows passing these in normally
 	if isDcosDocker() {
-		setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template, &persistence)
+		setFromEnvs(&vOpts)
 	}
 
-	setDefaults(&size, &fsType, &replica, &placementMode, &persistence)
+	setDefaults(&vOpts)
 
-	d.Volumes[m] = co.UpsertVolObj(r.Name, fsType, 0, persistence)
+	d.Volumes[m] = co.UpsertVolObj(r.Name, vOpts.FsType, 0, vOpts.Persistence)
 
 	volObj, ok := d.Volumes[m]
 	log.Debugf("volObj: %s, ok: %d", volObj, ok)
 
-	err = d.DateraClient.CreateVolume(r.Name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
+	err = d.DateraClient.CreateVolume(r.Name, &vOpts)
 	if err != nil {
 		return err
 	}
@@ -326,82 +342,87 @@ func (d DateraDriver) MountPoint(name string) string {
 	return filepath.Join(MountLoc, name)
 }
 
-func setDefaults(size *uint64, fsType *string, replica *uint64, placementMode, persistence *string) {
-	if *size == 0 {
+func setDefaults(volOpts *dc.VolOpts) {
+	if volOpts.Size == 0 {
 		log.Debugf(
 			"Using default size value of %s", DefaultSize)
-		*size = DefaultSize
+		volOpts.Size = DefaultSize
 	}
 	// Set default filesystem to ext4
-	if len(*fsType) == 0 {
+	if len(volOpts.FsType) == 0 {
 		log.Debugf(
 			"Using default filesystem value of %s", DefaultFS)
-		*fsType = DefaultFS
+		volOpts.FsType = DefaultFS
 	}
 
 	// Set default replicas to 3
-	if *replica == 0 {
+	if volOpts.Replica == 0 {
 		log.Debugf("Using default replica value of %d", DefaultReplicas)
-		*replica = uint64(DefaultReplicas)
+		volOpts.Replica = DefaultReplicas
 	}
 	// Set default placement to "hybrid"
-	if *placementMode == "" {
+	if volOpts.PlacementMode == "" {
 		log.Debugf("Using default placement value of %s", DefaultPlacement)
-		*placementMode = DefaultPlacement
+		volOpts.PlacementMode = DefaultPlacement
 	}
 	// Set persistence to "manual"
-	if *persistence == "" {
+	if volOpts.Persistence == "" {
 		log.Debugf("Using default persistence value of %s", DefaultPersistence)
+		volOpts.Persistence = DefaultPersistence
 	}
-	log.Debugf("After setting defaults: size %s, fsType %s, replica %d, placementMode %s, persistenceMode %s", *size, *fsType, *replica, *placementMode, *persistence)
+	log.Debugf("After setting defaults: size %s, fsType %s, replica %d, placementMode %s, persistenceMode %s",
+		volOpts.Size, volOpts.FsType, volOpts.Replica, volOpts.PlacementMode, volOpts.Persistence)
 }
 
-func setFromEnvs(size, replica *uint64, fsType *string, maxIops, maxBW *uint64, placementMode, template, persistence *string) {
-	*size, _ = strconv.ParseUint(os.Getenv(EnvSize), 10, 64)
-	if *size == 0 {
+func setFromEnvs(volOpts *dc.VolOpts) {
+	size, _ := strconv.ParseUint(os.Getenv(EnvSize), 10, 64)
+	if size == 0 {
 		// We should assume this because other drivers such as REXRAY
 		// default to this behavior for implicit volumes
-		*size = 16
+		size = 16
 	}
-	*replica, _ = strconv.ParseUint(os.Getenv(EnvReplica), 10, 8)
-	*fsType = os.Getenv(EnvFstype)
-	*maxIops, _ = strconv.ParseUint(os.Getenv(EnvMaxiops), 10, 64)
-	*maxBW, _ = strconv.ParseUint(os.Getenv(EnvMaxbw), 10, 64)
-	*placementMode = os.Getenv(EnvPlacement)
-	*template = os.Getenv(EnvTemplate)
-	*persistence = os.Getenv(EnvPersistence)
-	log.Debugf("Reading values from Environment variables: size %d, replica %d, fsType %s, maxIops %d, maxBW %d, placementMode %s, template %s",
-		*size, *replica, *fsType, *maxIops, *maxBW, *placementMode, *template)
+	replica, _ := strconv.ParseUint(os.Getenv(EnvReplica), 10, 8)
+	fsType := os.Getenv(EnvFstype)
+	maxIops, _ := strconv.ParseUint(os.Getenv(EnvMaxiops), 10, 64)
+	maxBW, _ := strconv.ParseUint(os.Getenv(EnvMaxbw), 10, 64)
+	placementMode := os.Getenv(EnvPlacement)
+	template := os.Getenv(EnvTemplate)
+	persistence := os.Getenv(EnvPersistence)
+	cloneSrc := os.Getenv(EnvCloneSrc)
+	volOpts = &dc.VolOpts{
+		size,
+		replica,
+		template,
+		fsType,
+		maxIops,
+		maxBW,
+		placementMode,
+		persistence,
+		cloneSrc,
+	}
+	log.Debugf("Reading values from Environment variables: size %d, replica %d, fsType %s, maxIops %d, maxBW %d, placementMode %s, template %s, cloneSrc %s",
+		size, replica, fsType, maxIops, maxBW, placementMode, template, cloneSrc)
 }
 
 func doImplicitCreate(d DateraDriver, name, m string) (*co.VolObj, error) {
 	// We need to create this implicitly since DCOS doesn't support full
 	// volume lifecycle management via Docker
-	var (
-		size          uint64
-		replica       uint64
-		fsType        string
-		maxIops       uint64
-		maxBW         uint64
-		placementMode string
-		template      string
-		persistence   string
-	)
-	setFromEnvs(&size, &replica, &fsType, &maxIops, &maxBW, &placementMode, &template, &persistence)
-	setDefaults(&size, &fsType, &replica, &placementMode, &persistence)
+	volOpts := dc.VolOpts{}
+	setFromEnvs(&volOpts)
+	setDefaults(&volOpts)
 
-	d.Volumes[m] = co.UpsertVolObj(name, fsType, 0, persistence)
+	d.Volumes[m] = co.UpsertVolObj(name, volOpts.FsType, 0, volOpts.Persistence)
 
 	volObj, ok := d.Volumes[m]
 	log.Debugf("volObj: %s, ok: %d", volObj, ok)
 
 	log.Debugf("Sending DCOS IMPLICIT create-volume to datera server.")
-	err := d.DateraClient.CreateVolume(name, int(size), int(replica), template, int(maxIops), int(maxBW), placementMode)
+	err := d.DateraClient.CreateVolume(name, &volOpts)
 	if err != nil {
 		return nil, err
 	}
 	log.Debugf("Mounting implict volume: %s", name)
-	vol, err := doMount(d, name, persistence, fsType)
+	vol, err := doMount(d, name, volOpts.Persistence, volOpts.FsType)
 	return vol, err
 }
 
@@ -434,16 +455,10 @@ func doMount(d DateraDriver, name, pmode, fs string) (*co.VolObj, error) {
 
 func isDcosDocker() bool {
 	fwk := strings.ToLower(os.Getenv(EnvFwk))
-	if fwk == "dcos-docker" {
-		return true
-	}
-	return false
+	return fwk == "dcos-docker"
 }
 
 func isDcosMesos() bool {
 	fwk := strings.ToLower(os.Getenv(EnvFwk))
-	if fwk == "dcos-mesos" {
-		return true
-	}
-	return false
+	return fwk == "dcos-mesos"
 }

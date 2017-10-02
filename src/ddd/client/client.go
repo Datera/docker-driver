@@ -28,6 +28,18 @@ type Client struct {
 	Api   *dsdk.SDK
 }
 
+type VolOpts struct {
+	Size          uint64
+	Replica       uint64
+	Template      string
+	FsType        string
+	MaxIops       uint64
+	MaxBW         uint64
+	PlacementMode string
+	Persistence   string
+	CloneSrc      string
+}
+
 func NewClient(addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	headers := make(map[string]string)
 	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "ddd.log", true)
@@ -52,12 +64,11 @@ func (r Client) VolumeExist(name string) (bool, error) {
 	return true, nil
 }
 
-func (r Client) CreateVolume(name string, size int, replica int, template string, maxIops int, maxBW int, placementMode string) error {
-	log.Debugf("CreateVolume invoked for %s, size %d, replica %d, template %s, maxIops %d, maxBW %d, placementMode %s",
-		name, size, replica, template, maxIops, maxBW, placementMode)
+func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
+	log.Debugf("CreateVolume invoked for %s, volOpts: %##v", name, volOpts)
 	var ai dsdk.AppInstance
-	if template != "" {
-		template = strings.Trim(template, "/")
+	if volOpts.Template != "" {
+		template := strings.Trim(volOpts.Template, "/")
 		log.Debugf("Creating AppInstance with template: %s", template)
 		at := dsdk.AppTemplate{
 			Path: "/app_templates/" + template,
@@ -66,13 +77,19 @@ func (r Client) CreateVolume(name string, size int, replica int, template string
 			Name:        name,
 			AppTemplate: &at,
 		}
-		log.Debugf("AI: %#v", ai)
+	} else if volOpts.CloneSrc != "" {
+		c := map[string]string{"path": volOpts.CloneSrc}
+		log.Debugf("Creating AppInstance from clone: %s", volOpts.CloneSrc)
+		ai = dsdk.AppInstance{
+			Name:     name,
+			CloneSrc: c,
+		}
 	} else {
 		vol := dsdk.Volume{
 			Name:          VolumeName,
-			Size:          float64(size),
-			PlacementMode: placementMode,
-			ReplicaCount:  replica,
+			Size:          float64(volOpts.Size),
+			PlacementMode: volOpts.PlacementMode,
+			ReplicaCount:  int(volOpts.Replica),
 		}
 		si := dsdk.StorageInstance{
 			Name:    StorageName,
@@ -89,10 +106,10 @@ func (r Client) CreateVolume(name string, size int, replica int, template string
 		return err
 	}
 	// Handle QoS values
-	if maxIops != 0 || maxBW != 0 {
+	if volOpts.MaxIops != 0 || volOpts.MaxBW != 0 {
 		pp := dsdk.PerformancePolicy{
-			TotalIopsMax:      maxIops,
-			TotalBandwidthMax: maxBW,
+			TotalIopsMax:      int(volOpts.MaxIops),
+			TotalBandwidthMax: int(volOpts.MaxBW),
 		}
 		// Get Performance_policy endpoint
 		_, err = r.Api.GetEp("app_instances").GetEp(name).GetEp(
@@ -276,15 +293,13 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 
 	var diskPath string
 	if isMultipathEnabled() {
-		for _, portal := range portals {
-			timeout = 10
-			if diskPath, err = loginPoller(name, portal, iqn, uuid, timeout, true); err != nil {
-				return "", err
-			}
+		timeout = 10
+		if diskPath, err = loginPoller(name, portals, iqn, uuid, timeout, true); err != nil {
+			return "", err
 		}
 	} else {
 		timeout = 10
-		if diskPath, err = loginPoller(name, portals[0], iqn, uuid, timeout, false); err != nil {
+		if diskPath, err = loginPoller(name, portals, iqn, uuid, timeout, false); err != nil {
 			return "", err
 		}
 	}
@@ -385,8 +400,8 @@ func getMultipathDisk(path string) (string, error) {
 }
 
 // Returns path to block device
-func doLogin(name, portal, iqn, uuid string, multipath bool) (string, error) {
-	log.Debugf("Logging in volume: %s, iqn: %s, portal: %s", name, iqn, portal)
+func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (string, error) {
+	log.Debugf("Logging in volume: %s, iqn: %s, portals: %s", name, iqn, portals)
 	var (
 		diskPath string
 		err      error
@@ -405,19 +420,26 @@ func doLogin(name, portal, iqn, uuid string, multipath bool) (string, error) {
 		return diskPath, nil
 	}
 
-	if out, err :=
-		co.ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
-		log.Debugf("Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
-		return diskPath, err
+	// Only use the first portal unless we're using multipath
+	if !multipath {
+		portals = []string{portals[0]}
 	}
 
-	if out, err :=
-		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
-		log.Debugf("Unable to login to target: %s at portal: %s. Error output: %s",
-			iqn,
-			portal,
-			string(out))
-		return diskPath, err
+	for _, portal := range portals {
+		if out, err :=
+			co.ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
+			log.Debugf("Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
+			return diskPath, err
+		}
+
+		if out, err :=
+			co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
+			log.Debugf("Unable to login to target: %s at portal: %s. Error output: %s",
+				iqn,
+				portal,
+				string(out))
+			return diskPath, err
+		}
 	}
 	if multipath {
 		diskPath, err = getMultipathDisk(uuidPath)
@@ -527,14 +549,14 @@ func isMultipathEnabled() bool {
 	return false
 }
 
-func loginPoller(name, portal, iqn, uuid string, timeout int, multipath bool) (string, error) {
+func loginPoller(name string, portals []string, iqn, uuid string, timeout int, multipath bool) (string, error) {
 	var (
 		diskPath string
 		err      error
 	)
 	for {
 		log.Debugf("Polling login.  Timeout %ss", timeout)
-		diskPath, err = doLogin(name, portal, iqn, uuid, multipath)
+		diskPath, err = doLogin(name, portals, iqn, uuid, multipath)
 		if err != nil {
 			if timeout <= 0 {
 				return diskPath, err

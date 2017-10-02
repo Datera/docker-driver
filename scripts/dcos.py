@@ -15,8 +15,8 @@ BASE = "http://{}/service/marathon/v2/apps"
 BASIC_APP = {
   "id": "test-datera-2",
   "instances": 1,
-  "cpus": 0.1,
-  "mem": 32,
+  "cpus": 1,
+  "mem": 1024,
   "cmd": "/bin/cat /dev/urandom > mesos-test/test.img",
   "container": {
     "type": "MESOS",
