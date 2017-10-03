@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
@@ -58,4 +59,9 @@ func ExecC(name string, arg ...string) *exec.Cmd {
 	cmd := name + " " + strings.Join(arg, " ")
 	log.Debugf("Executing Command: %s", cmd)
 	return exec.Command(name, arg...)
+}
+
+func Prettify(v interface{}) string {
+	b, _ := json.MarshalIndent(v, "", " ")
+	return string(b)
 }

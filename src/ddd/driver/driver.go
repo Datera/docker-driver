@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "1.1.1"
+	DriverVersion      = "1.1.3"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -31,6 +31,8 @@ const (
 	//          added helper DB methods, updated logging and DCOS implicit create support
 	// 1.1.0 -- Reorg into subpackages.  Bugfixes and implicit creation logic changes
 	// 1.1.1 -- Multipathing update.  Switched iscsi login discover back to using /by-uuid/
+	// 1.1.2 -- Moved to volume option struct interface in the client.  Fixed multipathing bug
+	// 1.1.3 -- Added cloneSrc option which takes an AppInstance name and clones the created volume from it
 
 	DRIVER = "Docker-Volume"
 
@@ -43,9 +45,7 @@ const (
 	OptMaxbw       = "maxBW"
 	OptPlacement   = "placementMode"
 	OptPersistence = "persistenceMode"
-	// TODO(mss): add a clone_src opt so we can specify a clone rather than a
-	// new volume creation
-	OptCloneSrc = "cloneSrcNotUsedYet"
+	OptCloneSrc    = "cloneSrc"
 
 	// V2 Volume Plugin static mounts must be under /mnt
 	MountLoc       = "/mnt"
@@ -160,6 +160,8 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 		persistence,
 		cloneSrc,
 	}
+
+	log.Debugf("Passed in volume opts: %s", co.Prettify(vOpts))
 
 	// Set values from environment variables if we're running inside
 	// DCOS.  This is only needed if running under Docker.  Running under
@@ -345,7 +347,7 @@ func (d DateraDriver) MountPoint(name string) string {
 func setDefaults(volOpts *dc.VolOpts) {
 	if volOpts.Size == 0 {
 		log.Debugf(
-			"Using default size value of %s", DefaultSize)
+			"Using default size value of %d", DefaultSize)
 		volOpts.Size = DefaultSize
 	}
 	// Set default filesystem to ext4
@@ -370,7 +372,7 @@ func setDefaults(volOpts *dc.VolOpts) {
 		log.Debugf("Using default persistence value of %s", DefaultPersistence)
 		volOpts.Persistence = DefaultPersistence
 	}
-	log.Debugf("After setting defaults: size %s, fsType %s, replica %d, placementMode %s, persistenceMode %s",
+	log.Debugf("After setting defaults: size %d, fsType %s, replica %d, placementMode %s, persistenceMode %s",
 		volOpts.Size, volOpts.FsType, volOpts.Replica, volOpts.PlacementMode, volOpts.Persistence)
 }
 

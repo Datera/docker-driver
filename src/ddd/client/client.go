@@ -65,7 +65,7 @@ func (r Client) VolumeExist(name string) (bool, error) {
 }
 
 func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
-	log.Debugf("CreateVolume invoked for %s, volOpts: %##v", name, volOpts)
+	log.Debugf("CreateVolume invoked for %s, volOpts: %s", name, co.Prettify(volOpts))
 	var ai dsdk.AppInstance
 	if volOpts.Template != "" {
 		template := strings.Trim(volOpts.Template, "/")
@@ -78,7 +78,7 @@ func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
 			AppTemplate: &at,
 		}
 	} else if volOpts.CloneSrc != "" {
-		c := map[string]string{"path": volOpts.CloneSrc}
+		c := map[string]string{"path": "/app_instances/" + volOpts.CloneSrc}
 		log.Debugf("Creating AppInstance from clone: %s", volOpts.CloneSrc)
 		ai = dsdk.AppInstance{
 			Name:     name,
@@ -251,8 +251,39 @@ func (r Client) FindDeviceFsType(diskPath string) (string, error) {
 	return "", fmt.Errorf("Couldn't find FsType")
 }
 
+func (r Client) OnlineVolume(name string) error {
+	aiep := r.Api.GetEp("app_instances").GetEp(name)
+	ai, err := aiep.Set("admin_state=online")
+	if err != nil {
+		log.Debugf("Couldn't find AppInstance, Error: %s", err)
+		return err
+	}
+	timeout := 10
+	for {
+		ai, err = aiep.Get()
+		myAi, err := dsdk.NewAppInstance(ai.GetB())
+		if err != nil {
+			log.Debugf("Couldn't unpack AppInstance, Error: %s", err)
+			return err
+		}
+		if myAi.AdminState == "online" {
+			break
+		}
+		if timeout <= 0 {
+			err = fmt.Errorf("AppInstance %s never came online", name)
+			log.Error(err)
+			return err
+		}
+		timeout--
+	}
+	return nil
+}
+
 func (r Client) LoginVolume(name string, destination string) (string, error) {
 	log.Debugf("LoginVolume invoked for: %s", name)
+	if err := r.OnlineVolume(name); err != nil {
+		return "", err
+	}
 	fi, err := os.Lstat(destination)
 	if os.IsNotExist(err) {
 		if err := os.MkdirAll(destination, 0755); err != nil {
@@ -274,7 +305,7 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 		iqn, portals, uuid, err = r.GetIQNandPortals(name)
 		if err != nil {
 			if timeout <= 0 {
-				log.Debugf("Unable to find IQN and portal for %s.", name)
+				log.Errorf("Unable to find IQN and portal for %s.", name)
 				return "", err
 			} else {
 				timeout--
@@ -341,7 +372,7 @@ func (r Client) MountVolume(name, destination, fsType, diskPath string) error {
 }
 
 func (r Client) UnmountVolume(name string, destination string) error {
-	iqn, portals, _, err := r.GetIQNandPortals(name)
+	iqn, portals, uuid, err := r.GetIQNandPortals(name)
 	if err != nil {
 		log.Errorf("UnmountVolume:: Unable to find IQN and portal for: %s.", name)
 		return err
@@ -354,11 +385,7 @@ func (r Client) UnmountVolume(name string, destination string) error {
 	}
 
 	for _, portal := range portals {
-		if err = logoutCommand(portal, iqn); err != nil {
-			// Failed logouts shouldn't return an error, but we should
-			// log it to make sure we know the reason
-			log.Warning(err)
-		}
+		doLogout(uuid, portal, iqn)
 	}
 
 	log.Debug("UnmountVolume: iscsi session logout successful.")
@@ -611,14 +638,28 @@ func waitForDisk(diskPath string, retries int) bool {
 	return false
 }
 
-func logoutCommand(portal, iqn string) error {
+// Doesn't return an error because we should always just log and continue
+func doLogout(uuid, portal, iqn string) {
+	uuidPath := fmt.Sprintf("/dev/disk/by-uuid/%s", uuid)
+	diskPath, _ := getMultipathDisk(uuidPath)
 	if out, err :=
 		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
 		log.Errorf("Unable to logout target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
 			string(out))
-		return err
 	}
-	return nil
+	if out, err :=
+		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--op=delete").CombinedOutput(); err != nil {
+		log.Errorf("Unable to delete target: %s at portal: %s. Error output: %s",
+			iqn,
+			portal,
+			string(out))
+	}
+	if diskPath != "" {
+		disk := filepath.Base(diskPath)
+		if out, err := co.ExecC("multipath", "-f", disk).CombinedOutput(); err != nil {
+			log.Errorf("Unable to flush multipath device: %s", disk, string(out))
+		}
+	}
 }
