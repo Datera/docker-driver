@@ -6,11 +6,7 @@ There are two ways to use this plugin
 
 ## Easy Installation (Docker v1.13+ required)
 
-Run this on each node that should use the Datera volume driver
-```bash
-$ sudo docker install dateraio/datera
-```
-Before enabling the plugin, create the configuration file
+Before enabling the plugin, create the configuration file on each node
 ```bash
 $ sudo touch /root/.datera-config-file
 ```
@@ -25,6 +21,10 @@ This is a JSON file with the following structure:
     "tenant": "/root",
     "os-user": "root"
 }
+```
+Run this on each node that should use the Datera volume driver
+```bash
+$ sudo docker install dateraiodev/docker-driver
 ```
 Update the config file with the relevant information for the cluster then
 run the following:
@@ -51,29 +51,23 @@ Start your docker containers with the option `--volume-driver=dateraiodev/docker
 $ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
 
-## The Hard Way (building from source, not recommended)
-
-### Building
-```bash
-$ make
-```
-
-### Running Unit Tests
-
-```bash
-$ make test
-```
+## The Other Way (required for Mesos installations, but also works for Docker)
 
 ### Installation
 
-{Update with binary location when we have one}
+Download the latest release of the docker-driver from https://github.com/Datera/docker-driver/releases
+
+Unzip the binary
+```bash
+unzip dddbin.zip
+```
 
 Install udev rules on each docker/mesos node
 ```bash
 sudo ./scripts/install_udev_rules.py
 ```
 
-### Starting the newly built driver
+### Start driver
 
 This plugin doesn't create volumes in your Datera cluster yet, so you'll have to create them yourself first.
 
@@ -99,6 +93,8 @@ Fill out the cluster info in the config file
 ```bash
 $ sudo ./dddbin
 ```
+PLEASE NOTE: If installing on a Mesos node, the environment variable
+`DATERA_FRAMEWORK="dcos-mesos"` or `DATERA_FRAMEWORK="dcos-docker"` must be set
 
 3a - Create a volume
 ```bash
@@ -120,17 +116,14 @@ only a subset of the Datera product functionality is available through DCOS and 
 It also means there are a few wonky behaviors when using the external volume support for
 DCOS.  You can read more about that here: https://dcos.io/docs/1.10/storage/external-storage/#potential-pitfalls
 
-### Build the driver
+Download the latest release of the docker-driver from https://github.com/Datera/docker-driver/releases
+
+Unzip the binary
 ```bash
-$ make
+unzip dddbin.zip
 ```
 
-### Copy the driver to all relevant Mesos Agent nodes
-```bash
-$ scp -i ~/your_ssh_key dddbin user@agent-node:/some/location/dddbin
-```
-
-### Create config file
+### Create config file on each node
 ```bash
 $ sudo touch datera-config-file.txt
 ```
@@ -170,6 +163,7 @@ DATERA_PLACEMENT=hybrid
 DATERA_MAX_IOPS=100
 DATERA_MAX_BW=100
 DATERA_FSTYPE=ext4
+DATERA_CLONE_SRC=some-app-instance
 ```
 PLEASE NOTE: These environment variables are necessary only for Docker
 containers and will be global for all Docker containers on each Mesos Agent
@@ -224,7 +218,7 @@ All 'dvdi/xxxxx' options must be double-quoted strings
   "instances": 1,
   "cpus": 0.1,
   "mem": 32,
-  "cmd": "/bin/cat /dev/urandom > mesos-test/test.img"
+  "cmd": "/bin/cat /dev/urandom > mesos-test/test.img",
   "container": {
     "type": "MESOS",
     "volumes": [
@@ -240,7 +234,8 @@ All 'dvdi/xxxxx' options must be double-quoted strings
             "dvdi/maxIops": "100",
             "dvdi/maxBW": "200",
             "dvdi/placementMode": "hybrid",
-            "dvdi/fsType": "ext4"
+            "dvdi/fsType": "ext4",
+            "dvdi/cloneSrc": "some-app-instance"
             }
         },
         "mode": "RW"
@@ -267,7 +262,7 @@ variables shown in an earlier section.
   "instances": 1,
   "cpus": 0.1,
   "mem": 32,
-  "cmd": "/usr/bin/tail -f /dev/null",
+  "cmd": "/bin/cat /dev/urandom > mesos-test/test.img",
   "container": {
     "type": "DOCKER",
     "docker": {
