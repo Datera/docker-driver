@@ -10,13 +10,14 @@ RUN apk add --update \
     alpine-sdk \
     open-iscsi \
     e2fsprogs \
-    mkinitfs
+    mkinitfs \
+    python
 RUN mkdir docker-driver/
 COPY . docker-driver/
 
 RUN cd docker-driver && make clean && make
 
-RUN apk del alpine-sdk -y
+RUN apk del alpine-sdk
 
 # Setup Volume Internal Mount Location
 RUN mkdir -p /var/lib/docker-volumes/_datera && \

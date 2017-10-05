@@ -1,22 +1,28 @@
 #!/usr/bin/env python
 
+import argparse
 import io
 import json
 import sys
 
 
-def main():
+def helper(msg, oneline):
+    if oneline:
+        return repr(msg)
+    return msg
+
+
+def main(args):
     f = None
-    msgonly = "-m" in sys.argv or "--message-only" in sys.argv
-    if len(sys.argv) == 1 or (msgonly and len(sys.argv) == 2):
+    if not args.file:
         f = sys.stdin
     else:
-        f = io.open(sys.argv[-1])
+        f = io.open(args.file)
 
-    for line in f.readlines():
-        if msgonly:
+    for line in f:
+        if args.message_only:
             try:
-                print(json.loads(line)["msg"])
+                print(helper(json.loads(line)["msg"], args.oneline))
             except ValueError:
                 pass
         else:
@@ -26,4 +32,9 @@ def main():
                 pass
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--message-only", action='store_true')
+    parser.add_argument("-o", "--oneline", action='store_true')
+    parser.add_argument("-f", "--file")
+    args = parser.parse_args()
+    main(args)

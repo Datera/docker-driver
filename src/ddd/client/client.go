@@ -446,13 +446,15 @@ func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (s
 		log.Debugf("Disk: %s is already available.", diskPath)
 		return diskPath, nil
 	}
+	usePortals := portals
 
 	// Only use the first portal unless we're using multipath
 	if !multipath {
-		portals = []string{portals[0]}
+		usePortals = []string{portals[0]}
+		log.Debugf("No multipath so only using first portal: %s", usePortals)
 	}
 
-	for _, portal := range portals {
+	for _, portal := range usePortals {
 		if out, err :=
 			co.ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
 			log.Debugf("Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
@@ -473,6 +475,8 @@ func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (s
 		if err != nil {
 			return diskPath, err
 		}
+	} else {
+		diskPath = uuidPath
 	}
 	return diskPath, nil
 }

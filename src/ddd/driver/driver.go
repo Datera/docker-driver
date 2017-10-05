@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "1.1.3"
+	DriverVersion      = "1.1.4"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -33,6 +33,9 @@ const (
 	// 1.1.1 -- Multipathing update.  Switched iscsi login discover back to using /by-uuid/
 	// 1.1.2 -- Moved to volume option struct interface in the client.  Fixed multipathing bug
 	// 1.1.3 -- Added cloneSrc option which takes an AppInstance name and clones the created volume from it
+	// 1.1.4 -- Fixed bug in non-multipath case where diskPath was not getting populated during login
+	//          Added run_driver.py helper script for running the driver inside a container with
+	//          log parsing.  Modified config.json for this purpose as well
 
 	DRIVER = "Docker-Volume"
 
@@ -434,6 +437,9 @@ func doMount(d DateraDriver, name, pmode, fs string) (*co.VolObj, error) {
 	if err != nil {
 		log.Debugf("Couldn't find volume, error: %s", err)
 		return nil, err
+	}
+	if diskPath == "" {
+		return nil, fmt.Errorf("Disk path is not populated")
 	}
 	newfs, _ := d.DateraClient.FindDeviceFsType(diskPath)
 	newfs = strings.TrimSpace(newfs)

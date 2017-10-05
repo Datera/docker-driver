@@ -2,9 +2,7 @@
     "description": "Datera Docker Plugin",
     "documentation": "https://docs.docker.com/engine/extend/plugins/",
     "entrypoint": [
-        "/bin/sh",
-        "-c",
-        "/usr/sbin/iscsid; /go/docker-driver/dddbin"
+        "/go/docker-driver/run_driver.sh"
     ],
     "network": {
            "type": "host"
