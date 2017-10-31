@@ -121,7 +121,7 @@ func NewDateraDriver(restAddress, username, password, tenant string, debug, noSs
 //  persistenceMode -- Default: manual
 //  cloneSrc
 func (d DateraDriver) Create(r *dv.CreateRequest) error {
-	log.Debugf("DateraDriver.%s", "Create")
+	log.Debugf("DateraDriver.Create: %#v", r)
 	log.Debugf("Creating volume %s\n", r.Name)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -188,7 +188,7 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 }
 
 func (d DateraDriver) Remove(r *dv.RemoveRequest) error {
-	log.Debugf("DateraDriver.%s", "Remove")
+	log.Debugf("DateraDriver.Remove: %#v", r)
 	log.Debugf("Removing volume %s", r.Name)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -216,7 +216,7 @@ func (d DateraDriver) Remove(r *dv.RemoveRequest) error {
 }
 
 func (d DateraDriver) List() (*dv.ListResponse, error) {
-	log.Debugf("DateraDriver.%s", "List")
+	log.Debugf("DateraDriver.List")
 	log.Debugf("Listing volumes: \n")
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -229,12 +229,12 @@ func (d DateraDriver) List() (*dv.ListResponse, error) {
 }
 
 func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
-	log.Debugf("DateraDriver.%s", "Get")
+	log.Debugf("DateraDriver.Get: %#v", r)
 	log.Debugf("Get volumes: %s", r.Name)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	m := d.MountPoint(r.Name)
-	st := make(map[string]interface{})
+	// st := make(map[string]interface{})
 	var (
 		vol *co.VolObj
 		err error
@@ -243,15 +243,22 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 	if vol, ok = d.Volumes[m]; ok {
 		log.Debugf("In memory volume object found for: %s", r.Name)
 		// Check to see if we're running under DCOS
-		if isDcosDocker() {
-			// Check to see if we have a volume with this name
-			if e, _ := d.DateraClient.VolumeExist(r.Name); !e {
-				// Implicitly create volume if we don't have it
-				log.Debugf("Doing implicit create of volume: %s", r.Name)
+		// Check to see if we have a volume with this name
+		if e, _ := d.DateraClient.VolumeExist(r.Name); e {
+			// Implicitly create volume if we don't have it
+			log.Debugf("Doing implicit create of volume: %s", r.Name)
+			if isDcosDocker() {
 				if vol, err = doImplicitCreate(d, r.Name, m); err != nil {
 					return &dv.GetResponse{}, err
 				}
 			}
+		} else {
+			msg := fmt.Sprintf("Couldn't find %s, but we have a local record, deleting local record", r.Name)
+			err = fmt.Errorf(msg)
+			log.Errorf(msg)
+			vol.DelConnection()
+			delete(d.Volumes, m)
+			return &dv.GetResponse{}, err
 		}
 	} else if e, _ := d.DateraClient.VolumeExist(r.Name); e {
 		// Handle case where volume exists on Datera array, but we
@@ -274,16 +281,16 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 	} else {
 		return &dv.GetResponse{}, fmt.Errorf("Unable to find volume mounted on %s", m)
 	}
-	return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: st}}, nil
+	return &dv.GetResponse{Volume: &dv.Volume{Name: vol.Name, Mountpoint: d.MountPoint(vol.Name), Status: make(map[string]interface{}, 0)}}, nil
 }
 
 func (d DateraDriver) Path(r *dv.PathRequest) (*dv.PathResponse, error) {
-	log.Debugf("DateraDriver.%s", "Path")
+	log.Debugf("DateraDriver.Path")
 	return &dv.PathResponse{Mountpoint: d.MountPoint(r.Name)}, nil
 }
 
 func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
-	log.Debugf("DateraDriver.%s", "Mount")
+	log.Debugf("DateraDriver.Mount: %#v", r)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	m := d.MountPoint(r.Name)
@@ -307,7 +314,7 @@ func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
 }
 
 func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
-	log.Debugf("DateraDriver.%s", "Unmount")
+	log.Debugf("DateraDriver.Unmount: %#v", r)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	m := d.MountPoint(r.Name)
@@ -337,7 +344,7 @@ func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
 }
 
 func (d DateraDriver) Capabilities() *dv.CapabilitiesResponse {
-	log.Debugf("DateraDriver.%s", "Capabilities")
+	log.Debugf("DateraDriver.Capabilities")
 	// This driver is global scope since created volumes are not bound to the
 	// engine that created them.
 	return &dv.CapabilitiesResponse{Capabilities: dv.Capability{Scope: "global"}}
@@ -394,17 +401,15 @@ func setFromEnvs(volOpts *dc.VolOpts) {
 	template := os.Getenv(EnvTemplate)
 	persistence := os.Getenv(EnvPersistence)
 	cloneSrc := os.Getenv(EnvCloneSrc)
-	volOpts = &dc.VolOpts{
-		size,
-		replica,
-		template,
-		fsType,
-		maxIops,
-		maxBW,
-		placementMode,
-		persistence,
-		cloneSrc,
-	}
+	volOpts.Size = size
+	volOpts.Replica = replica
+	volOpts.Template = template
+	volOpts.FsType = fsType
+	volOpts.MaxIops = maxIops
+	volOpts.MaxBW = maxBW
+	volOpts.PlacementMode = placementMode
+	volOpts.Persistence = persistence
+	volOpts.CloneSrc = cloneSrc
 	log.Debugf("Reading values from Environment variables: size %d, replica %d, fsType %s, maxIops %d, maxBW %d, placementMode %s, template %s, cloneSrc %s",
 		size, replica, fsType, maxIops, maxBW, placementMode, template, cloneSrc)
 }

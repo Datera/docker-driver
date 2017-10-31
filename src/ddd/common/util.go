@@ -1,10 +1,12 @@
 package common
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
+	"text/template"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -64,4 +66,17 @@ func ExecC(name string, arg ...string) *exec.Cmd {
 func Prettify(v interface{}) string {
 	b, _ := json.MarshalIndent(v, "", " ")
 	return string(b)
+}
+
+func Tsprint(s string, m map[string]string) (string, error) {
+	tpl, err := template.New("format").Parse(s)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	err = tpl.Execute(&buf, m)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }

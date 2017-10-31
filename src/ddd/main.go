@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path"
 	"strconv"
+	"time"
 
 	co "ddd/common"
 	dd "ddd/driver"
@@ -185,6 +186,12 @@ func main() {
 		log.Errorf("Could not convert gid to int: %s", u.Gid)
 		os.Exit(3)
 	}
+	// Start log daemon process after an initial sleep
+	go func() {
+		time.Sleep(120 * time.Second)
+		co.LogUploadDaemon(conf.DateraCluster, conf.Username, conf.Password, "datera-ddd.bin", 60)
+	}()
+
 	log.Debugf("listening on %s.sock\n", sockName)
 	log.Debug(h.ServeUnix(sockName, gid))
 }
