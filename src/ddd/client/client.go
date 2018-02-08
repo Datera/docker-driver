@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 
 	co "ddd/common"
 	dsdk "github.com/Datera/go-sdk/src/dsdk"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -40,7 +40,7 @@ type VolOpts struct {
 	CloneSrc      string
 }
 
-func NewClient(addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
+func NewClient(ctxt context.Context, addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	headers := make(map[string]string)
 	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "ddd.log", true)
 	co.PanicErr(err)
@@ -49,27 +49,27 @@ func NewClient(addr, username, password, tenant string, debug, ssl bool, driver,
 		Api:   Api,
 		Debug: debug,
 	}
-	log.Debugf("Client: %#v", client)
+	co.Debugf(ctxt, "Client: %#v", client)
 	return client
 }
 
-func (r Client) VolumeExist(name string) (bool, error) {
-	log.Debugf("VolumeExist invoked for %s", name)
+func (r Client) VolumeExist(ctxt context.Context, name string) (bool, error) {
+	co.Debugf(ctxt, "VolumeExist invoked for %s", name)
 	_, err := r.Api.GetEp("app_instances").GetEp(name).Get()
 	if err != nil {
-		log.Debugf("Volume %s not found", name)
+		co.Debugf(ctxt, "Volume %s not found", name)
 		return false, err
 	}
-	log.Debugf("Volume %s found", name)
+	co.Debugf(ctxt, "Volume %s found", name)
 	return true, nil
 }
 
-func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
-	log.Debugf("CreateVolume invoked for %s, volOpts: %s", name, co.Prettify(volOpts))
+func (r Client) CreateVolume(ctxt context.Context, name string, volOpts *VolOpts) error {
+	co.Debugf(ctxt, "CreateVolume invoked for %s, volOpts: %s", name, co.Prettify(volOpts))
 	var ai dsdk.AppInstance
 	if volOpts.Template != "" {
 		template := strings.Trim(volOpts.Template, "/")
-		log.Debugf("Creating AppInstance with template: %s", template)
+		co.Debugf(ctxt, "Creating AppInstance with template: %s", template)
 		at := dsdk.AppTemplate{
 			Path: "/app_templates/" + template,
 		}
@@ -79,7 +79,7 @@ func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
 		}
 	} else if volOpts.CloneSrc != "" {
 		c := map[string]string{"path": "/app_instances/" + volOpts.CloneSrc}
-		log.Debugf("Creating AppInstance from clone: %s", volOpts.CloneSrc)
+		co.Debugf(ctxt, "Creating AppInstance from clone: %s", volOpts.CloneSrc)
 		ai = dsdk.AppInstance{
 			Name:     name,
 			CloneSrc: c,
@@ -102,7 +102,7 @@ func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
 	}
 	_, err := r.Api.GetEp("app_instances").Create(ai)
 	if err != nil {
-		log.Error(err)
+		co.Error(ctxt, err)
 		return err
 	}
 	// Handle QoS values
@@ -121,16 +121,16 @@ func (r Client) CreateVolume(name string, volOpts *VolOpts) error {
 	return nil
 }
 
-func (r Client) CreateACL(name string, random bool) error {
-	log.Debugf("CreateACL invoked for %s", name)
+func (r Client) CreateACL(ctxt context.Context, name string, random bool) error {
+	co.Debugf(ctxt, "CreateACL invoked for %s", name)
 	// Parse InitiatorName
 	dat, err := co.FileReader(initiatorFile)
 	if err != nil {
-		log.Debugf("Could not read file %s", initiatorFile)
+		co.Debugf(ctxt, "Could not read file %s", initiatorFile)
 		return err
 	}
 	initiator := strings.Split(strings.TrimSpace(string(dat)), "=")[1]
-	log.Debugf(initiator)
+	co.Debugf(ctxt, initiator)
 
 	iep := r.Api.GetEp("initiators")
 
@@ -163,8 +163,8 @@ func (r Client) CreateACL(name string, random bool) error {
 	return nil
 }
 
-func (r Client) DetachVolume(name string) error {
-	log.Debugf("DetachVolume invoked for %s", name)
+func (r Client) DetachVolume(ctxt context.Context, name string) error {
+	co.Debugf(ctxt, "DetachVolume invoked for %s", name)
 
 	siep := r.Api.GetEp("app_instances").GetEp(name)
 	_, err := siep.Set("admin_state=offline", "force=true")
@@ -175,42 +175,42 @@ func (r Client) DetachVolume(name string) error {
 	return nil
 }
 
-func (r Client) DeleteVolume(name, mountpoint string) error {
-	log.Debugf("DeleteVolume invoked for %s", name)
+func (r Client) DeleteVolume(ctxt context.Context, name, mountpoint string) error {
+	co.Debugf(ctxt, "DeleteVolume invoked for %s", name)
 
-	err := r.DetachVolume(name)
+	err := r.DetachVolume(ctxt, name)
 	if err != nil {
-		log.Debug(err)
+		co.Debug(ctxt, err)
 		return err
 	}
 
 	aiep, err := r.Api.GetEp("app_instances").GetEp(name).Get()
 	// If we don't find the app_instance, fail quietly
 	if err != nil {
-		log.Debugf("Could not find app_instance %s", name)
+		co.Debugf(ctxt, "Could not find app_instance %s", name)
 		return nil
 	}
 	err = aiep.Delete()
 	if err != nil {
-		log.Debug(err)
+		co.Debug(ctxt, err)
 		return nil
 	}
 
 	return nil
 }
 
-func (r Client) GetIQNandPortals(name string) (string, []string, string, error) {
-	log.Debugf("GetIQNandPortals invoked for: %s", name)
+func (r Client) GetIQNandPortals(ctxt context.Context, name string) (string, []string, string, error) {
+	co.Debugf(ctxt, "GetIQNandPortals invoked for: %s", name)
 
 	si, err := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).Get()
 	if err != nil {
-		log.Debugf("Couldn't find target, Error: %s", err)
+		co.Debugf(ctxt, "Couldn't find target, Error: %s", err)
 		return "", []string{}, "", err
 	}
 
 	mySi, err := dsdk.NewStorageInstance(si.GetB())
 	if err != nil {
-		log.Debugf("Couldn't unpack storage instance, Error: %s", err)
+		co.Debugf(ctxt, "Couldn't unpack storage instance, Error: %s", err)
 		return "", []string{}, "", err
 	}
 	volUUID := (*mySi.Volumes)[0].Uuid
@@ -229,33 +229,33 @@ func (r Client) GetIQNandPortals(name string) (string, []string, string, error) 
 	}
 	iqn := mySi.Access["iqn"].(string)
 
-	log.Debugf("iqn: %s, portals: %s, volume-uuid: %s", iqn, portals, volUUID)
+	co.Debugf(ctxt, "iqn: %s, portals: %s, volume-uuid: %s", iqn, portals, volUUID)
 	return iqn, portals, volUUID, err
 }
 
-func (r Client) FindDeviceFsType(diskPath string) (string, error) {
-	log.Debug("FindDeviceFsType invoked")
+func (r Client) FindDeviceFsType(ctxt context.Context, diskPath string) (string, error) {
+	co.Debug(ctxt, "FindDeviceFsType invoked")
 
 	var out []byte
 	var err error
 	if out, err = co.ExecC("blkid", diskPath).CombinedOutput(); err != nil {
-		log.Debugf("Error finding FsType: %s, out: %s", err, out)
+		co.Debugf(ctxt, "Error finding FsType: %s, out: %s", err, out)
 		return "", err
 	}
 	re, _ := regexp.Compile(`TYPE="(.*)"`)
 	f := re.FindSubmatch(out)
 	if len(f) > 1 {
-		log.Debugf("Found FsType: %s for Device: %s", string(f[1]), diskPath)
+		co.Debugf(ctxt, "Found FsType: %s for Device: %s", string(f[1]), diskPath)
 		return string(f[1]), nil
 	}
 	return "", fmt.Errorf("Couldn't find FsType")
 }
 
-func (r Client) OnlineVolume(name string) error {
+func (r Client) OnlineVolume(ctxt context.Context, name string) error {
 	aiep := r.Api.GetEp("app_instances").GetEp(name)
 	ai, err := aiep.Set("admin_state=online")
 	if err != nil {
-		log.Debugf("Couldn't find AppInstance, Error: %s", err)
+		co.Debugf(ctxt, "Couldn't find AppInstance, Error: %s", err)
 		return err
 	}
 	timeout := 10
@@ -263,7 +263,7 @@ func (r Client) OnlineVolume(name string) error {
 		ai, err = aiep.Get()
 		myAi, err := dsdk.NewAppInstance(ai.GetB())
 		if err != nil {
-			log.Debugf("Couldn't unpack AppInstance, Error: %s", err)
+			co.Debugf(ctxt, "Couldn't unpack AppInstance, Error: %s", err)
 			return err
 		}
 		if myAi.AdminState == "online" {
@@ -271,7 +271,7 @@ func (r Client) OnlineVolume(name string) error {
 		}
 		if timeout <= 0 {
 			err = fmt.Errorf("AppInstance %s never came online", name)
-			log.Error(err)
+			co.Error(ctxt, err)
 			return err
 		}
 		timeout--
@@ -279,9 +279,9 @@ func (r Client) OnlineVolume(name string) error {
 	return nil
 }
 
-func (r Client) LoginVolume(name string, destination string) (string, error) {
-	log.Debugf("LoginVolume invoked for: %s", name)
-	if err := r.OnlineVolume(name); err != nil {
+func (r Client) LoginVolume(ctxt context.Context, name string, destination string) (string, error) {
+	co.Debugf(ctxt, "LoginVolume invoked for: %s", name)
+	if err := r.OnlineVolume(ctxt, name); err != nil {
 		return "", err
 	}
 	fi, err := os.Lstat(destination)
@@ -302,10 +302,10 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 		uuid    string
 	)
 	for {
-		iqn, portals, uuid, err = r.GetIQNandPortals(name)
+		iqn, portals, uuid, err = r.GetIQNandPortals(ctxt, name)
 		if err != nil {
 			if timeout <= 0 {
-				log.Errorf("Unable to find IQN and portal for %s.", name)
+				co.Errorf(ctxt, "Unable to find IQN and portal for %s.", name)
 				return "", err
 			} else {
 				timeout--
@@ -316,21 +316,21 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 		}
 	}
 	// Make sure we're authorized to access the volume
-	err = r.CreateACL(name, false)
+	err = r.CreateACL(ctxt, name, false)
 	if err != nil {
-		log.Error(err)
+		co.Error(ctxt, err)
 		return "", err
 	}
 
 	var diskPath string
-	if isMultipathEnabled() {
+	if isMultipathEnabled(ctxt) {
 		timeout = 10
-		if diskPath, err = loginPoller(name, portals, iqn, uuid, timeout, true); err != nil {
+		if diskPath, err = loginPoller(ctxt, name, portals, iqn, uuid, timeout, true); err != nil {
 			return "", err
 		}
 	} else {
 		timeout = 10
-		if diskPath, err = loginPoller(name, portals, iqn, uuid, timeout, false); err != nil {
+		if diskPath, err = loginPoller(ctxt, name, portals, iqn, uuid, timeout, false); err != nil {
 			return "", err
 		}
 	}
@@ -339,65 +339,65 @@ func (r Client) LoginVolume(name string, destination string) (string, error) {
 
 }
 
-func (r Client) MountVolume(name, destination, fsType, diskPath string) error {
-	log.Debugf("MountVolume invoked for: %s, destination: %s, fsType: %s, diskPath: %s", name, destination, fsType, diskPath)
+func (r Client) MountVolume(ctxt context.Context, name, destination, fsType, diskPath string) error {
+	co.Debugf(ctxt, "MountVolume invoked for: %s, destination: %s, fsType: %s, diskPath: %s", name, destination, fsType, diskPath)
 	// wait for disk to be available after target login
 
-	diskAvailable := waitForDisk(diskPath, 10)
+	diskAvailable := waitForDisk(ctxt, diskPath, 10)
 	if !diskAvailable {
 		err := fmt.Errorf("Device: %s is not available in 10 seconds", diskPath)
-		log.Error(err)
+		co.Error(ctxt, err)
 		return err
 	}
 
-	mounted, err := isAlreadyMounted(destination)
+	mounted, err := isAlreadyMounted(ctxt, destination)
 	if mounted {
-		log.Errorf("destination mount-point: %s is in use already", destination)
+		co.Errorf(ctxt, "destination mount-point: %s is in use already", destination)
 		return err
 	}
 
 	// Mount the disk now to the destination
 	if err := os.MkdirAll(destination, 0750); err != nil {
-		log.Errorf("failed to create destination directory: %s", destination)
+		co.Errorf(ctxt, "failed to create destination directory: %s", destination)
 		return err
 	}
 
-	err = doMount(diskPath, destination, fsType, nil)
+	err = doMount(ctxt, diskPath, destination, fsType, nil)
 	if err != nil {
-		log.Errorf("Unable to mount iscsi volume: %s to directory: %s.", diskPath, destination)
+		co.Errorf(ctxt, "Unable to mount iscsi volume: %s to directory: %s.", diskPath, destination)
 		return err
 	}
 
 	return nil
 }
 
-func (r Client) UnmountVolume(name string, destination string) error {
-	iqn, portals, uuid, err := r.GetIQNandPortals(name)
+func (r Client) UnmountVolume(ctxt context.Context, name string, destination string) error {
+	iqn, portals, uuid, err := r.GetIQNandPortals(ctxt, name)
 	if err != nil {
-		log.Errorf("UnmountVolume:: Unable to find IQN and portal for: %s.", name)
+		co.Errorf(ctxt, "UnmountVolume:: Unable to find IQN and portal for: %s.", name)
 		return err
 	}
 
-	err = doUnmount(destination, 20)
+	err = doUnmount(ctxt, destination, 20)
 	if err != nil {
-		log.Errorf("Unable to unmount: %s", destination)
+		co.Errorf(ctxt, "Unable to unmount: %s", destination)
 		return err
 	}
 
 	for _, portal := range portals {
-		doLogout(uuid, portal, iqn)
+		doLogout(ctxt, uuid, portal, iqn)
 	}
 
-	log.Debug("UnmountVolume: iscsi session logout successful.")
+	co.Debug(ctxt, "UnmountVolume: iscsi session logout successful.")
 
 	return nil
 }
 
-func getMultipathDisk(path string) (string, error) {
+func getMultipathDisk(ctxt context.Context, path string) (string, error) {
 	// Follow link to destination directory
 	device_path, err := os.Readlink(path)
 	if err != nil {
-		log.Errorf("Error reading link: %s -- error: %s", path, err)
+		co.Errorf(ctxt, "Error reading link: %s -- error: %s", path, err)
 		return "", err
 	}
 	sdevice := filepath.Base(device_path)
@@ -418,7 +418,7 @@ func getMultipathDisk(path string) (string, error) {
 				// We've found a matching entry, return the path for the
 				// dm-* device it was found under
 				p := filepath.Join("/dev", filepath.Base(dmpath))
-				log.Debugf("Found matching device: %s under dm-* device path %s", sdevice, dmpath)
+				co.Debugf(ctxt, "Found matching device: %s under dm-* device path %s", sdevice, dmpath)
 				return p, nil
 			}
 		}
@@ -427,23 +427,23 @@ func getMultipathDisk(path string) (string, error) {
 }
 
 // Returns path to block device
-func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (string, error) {
-	log.Debugf("Logging in volume: %s, iqn: %s, portals: %s", name, iqn, portals)
+func doLogin(ctxt context.Context, name string, portals []string, iqn, uuid string, multipath bool) (string, error) {
+	co.Debugf(ctxt, "Logging in volume: %s, iqn: %s, portals: %s", name, iqn, portals)
 	var (
 		diskPath string
 		err      error
 	)
 	uuidPath := fmt.Sprintf("/dev/disk/by-uuid/%s", uuid)
-	diskAvailable := waitForDisk(uuidPath, 1)
+	diskAvailable := waitForDisk(ctxt, uuidPath, 1)
 
 	if diskAvailable {
 		if multipath {
-			diskPath, err = getMultipathDisk(uuidPath)
+			diskPath, err = getMultipathDisk(ctxt, uuidPath)
 			if err != nil {
 				return diskPath, err
 			}
 		}
-		log.Debugf("Disk: %s is already available.", diskPath)
+		co.Debugf(ctxt, "Disk: %s is already available.", diskPath)
 		return diskPath, nil
 	}
 	usePortals := portals
@@ -451,19 +451,19 @@ func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (s
 	// Only use the first portal unless we're using multipath
 	if !multipath {
 		usePortals = []string{portals[0]}
-		log.Debugf("No multipath so only using first portal: %s", usePortals)
+		co.Debugf(ctxt, "No multipath so only using first portal: %s", usePortals)
 	}
 
 	for _, portal := range usePortals {
 		if out, err :=
 			co.ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
-			log.Debugf("Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
+			co.Debugf(ctxt, "Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
 			return diskPath, err
 		}
 
 		if out, err :=
 			co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
-			log.Debugf("Unable to login to target: %s at portal: %s. Error output: %s",
+			co.Debugf(ctxt, "Unable to login to target: %s at portal: %s. Error output: %s",
 				iqn,
 				portal,
 				string(out))
@@ -471,7 +471,7 @@ func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (s
 		}
 	}
 	if multipath {
-		diskPath, err = getMultipathDisk(uuidPath)
+		diskPath, err = getMultipathDisk(ctxt, uuidPath)
 		if err != nil {
 			return diskPath, err
 		}
@@ -481,8 +481,8 @@ func doLogin(name string, portals []string, iqn, uuid string, multipath bool) (s
 	return diskPath, nil
 }
 
-func doMount(sourceDisk string, destination string, fsType string, mountOptions []string) error {
-	log.Debugf("Mounting volume: %s to: %s, file-system: %s options: %v",
+func doMount(ctxt context.Context, sourceDisk string, destination string, fsType string, mountOptions []string) error {
+	co.Debugf(ctxt, "Mounting volume: %s to: %s, file-system: %s options: %v",
 		sourceDisk,
 		destination,
 		fsType,
@@ -493,50 +493,50 @@ func doMount(sourceDisk string, destination string, fsType string, mountOptions 
 	if out, err :=
 		co.ExecC("mount", "-t", fsType,
 			"-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
-		log.Warningf("mount failed for volume: %s. output: %s, error: %s", sourceDisk, string(out), err)
-		log.Infof("Checking for disk formatting: %s", sourceDisk)
+		co.Warningf(ctxt, "mount failed for volume: %s. output: %s, error: %s", sourceDisk, string(out), err)
+		co.Infof(ctxt, "Checking for disk formatting: %s", sourceDisk)
 
 		if fsType == "ext4" {
-			log.Debugf("ext4 block fsType: %s", fsType)
+			co.Debugf(ctxt, "ext4 block fsType: %s", fsType)
 			_, err =
 				co.ExecC("mkfs."+fsType, "-E",
 					"lazy_itable_init=0,lazy_journal_init=0,nodiscard", "-F", sourceDisk).CombinedOutput()
 		} else if fsType == "xfs" {
-			log.Debugf("fsType: %s", fsType)
+			co.Debugf(ctxt, "fsType: %s", fsType)
 			_, err =
 				co.ExecC("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
 		} else {
-			log.Debugf("fsType: %s", fsType)
+			co.Debugf(ctxt, "fsType: %s", fsType)
 			_, err =
 				co.ExecC("mkfs."+fsType, sourceDisk).CombinedOutput()
 		}
 		if err == nil {
-			log.Debug("Done with formatting, mounting again.")
+			co.Debug(ctxt, "Done with formatting, mounting again.")
 			if _, err := co.ExecC("mount", "-t", fsType,
 				"-o", strings.Join(mountOptions, ","),
 				sourceDisk, destination).CombinedOutput(); err != nil {
-				log.Errorf("Error in mounting. Error: %s", err)
+				co.Errorf(ctxt, "Error in mounting. Error: %s", err)
 				return err
 			} else {
-				log.Debugf("Mounted: %s successfully on: %s", sourceDisk, destination)
+				co.Debugf(ctxt, "Mounted: %s successfully on: %s", sourceDisk, destination)
 				return nil
 			}
 		} else {
-			log.Errorf("mkfs failed. Error: %s", err)
+			co.Errorf(ctxt, "mkfs failed. Error: %s", err)
 		}
 		return err
 	}
-	log.Debugf("Mounted: successfully on: %s", sourceDisk, destination)
+	co.Debugf(ctxt, "Mounted: successfully on: %s", sourceDisk, destination)
 	return nil
 }
 
-func doUnmount(destination string, retries int) error {
-	log.Debugf("Unmounting: %s", destination)
+func doUnmount(ctxt context.Context, destination string, retries int) error {
+	co.Debugf(ctxt, "Unmounting: %s", destination)
 
 	var err error
 	for i := 0; i < retries; i++ {
 		if out, err := co.ExecC("umount", destination).CombinedOutput(); err != nil {
-			log.Debugf("doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
+			co.Debugf(ctxt, "doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
 			if strings.Contains(string(out), "not mounted") || strings.Contains(string(out), "not currently mounted") {
 				err = nil
 				break
@@ -548,27 +548,27 @@ func doUnmount(destination string, retries int) error {
 	}
 
 	if err != nil {
-		log.Errorf("Could not unmount %s within %d seconds, error: %s", destination, retries, err)
+		co.Errorf(ctxt, "Could not unmount %s within %d seconds, error: %s", destination, retries, err)
 		return err
 	}
 
 	if _, err = co.ExecC("rmdir", destination).CombinedOutput(); err != nil {
-		log.Warningf("Couldn't remove directory: %s, err: %s", destination, err)
+		co.Warningf(ctxt, "Couldn't remove directory: %s, err: %s", destination, err)
 	}
 
-	log.Debug("Unmount successful.")
+	co.Debug(ctxt, "Unmount successful.")
 
 	return nil
 }
 
-func isMultipathEnabled() bool {
+func isMultipathEnabled(ctxt context.Context) bool {
 	cmd := "ps -ef | grep multipathd | grep -v grep | wc -l"
 	if out, err := co.ExecC("bash", "-c", cmd).CombinedOutput(); err != nil {
-		log.Debug("Host does not support multipathing.")
+		co.Debug(ctxt, "Host does not support multipathing.")
 		return false
 	} else {
 		stringOutput := string(out[0])
-		log.Debugf("Multipathing: output for multipath check: %s", string(out[0]))
+		co.Debugf(ctxt, "Multipathing: output for multipath check: %s", string(out[0]))
 		mpProcessCnt, _ := strconv.ParseUint(stringOutput, 10, 64)
 		if mpProcessCnt != 0 {
 			return true
@@ -576,18 +576,18 @@ func isMultipathEnabled() bool {
 			return false
 		}
 	}
-	log.Debug("No multipathd command found. Presume no multipathing on this node.")
+	co.Debug(ctxt, "No multipathd command found. Presume no multipathing on this node.")
 	return false
 }
 
-func loginPoller(name string, portals []string, iqn, uuid string, timeout int, multipath bool) (string, error) {
+func loginPoller(ctxt context.Context, name string, portals []string, iqn, uuid string, timeout int, multipath bool) (string, error) {
 	var (
 		diskPath string
 		err      error
 	)
 	for {
-		log.Debugf("Polling login.  Timeout %ss", timeout)
-		diskPath, err = doLogin(name, portals, iqn, uuid, multipath)
+		co.Debugf(ctxt, "Polling login.  Timeout %ss", timeout)
+		diskPath, err = doLogin(ctxt, name, portals, iqn, uuid, multipath)
 		if err != nil {
 			if timeout <= 0 {
 				return diskPath, err
@@ -606,7 +606,7 @@ func loginPoller(name string, portals []string, iqn, uuid string, timeout int, m
 // If the destination directory and its parent, both are not on the same
 // device, it means directory is already mounted for something.
 
-func isAlreadyMounted(destination string) (bool, error) {
+func isAlreadyMounted(ctxt context.Context, destination string) (bool, error) {
 	destStat, err := os.Stat(destination)
 	if err != nil {
 		return false, err
@@ -624,38 +624,38 @@ func isAlreadyMounted(destination string) (bool, error) {
 	return false, nil
 }
 
-func waitForDisk(diskPath string, retries int) bool {
+func waitForDisk(ctxt context.Context, diskPath string, retries int) bool {
 	for i := 0; i < retries; i++ {
 		_, err := os.Stat(diskPath)
 		if err == nil {
-			log.Debugf("Disk Available: %s", diskPath)
+			co.Debugf(ctxt, "Disk Available: %s", diskPath)
 			return true
 		}
 
 		if err != nil && !os.IsNotExist(err) {
-			log.Error(err)
+			co.Error(ctxt, err)
 			return false
 		}
-		log.Debugf("Waiting for disk: %s", err)
+		co.Debugf(ctxt, "Waiting for disk: %s", err)
 		time.Sleep(time.Second)
 	}
 	return false
 }
 
 // Doesn't return an error because we should always just log and continue
-func doLogout(uuid, portal, iqn string) {
+func doLogout(ctxt context.Context, uuid, portal, iqn string) {
 	uuidPath := fmt.Sprintf("/dev/disk/by-uuid/%s", uuid)
-	diskPath, _ := getMultipathDisk(uuidPath)
+	diskPath, _ := getMultipathDisk(ctxt, uuidPath)
 	if out, err :=
 		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
-		log.Errorf("Unable to logout target: %s at portal: %s. Error output: %s",
+		co.Errorf(ctxt, "Unable to logout target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
 			string(out))
 	}
 	if out, err :=
 		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--op=delete").CombinedOutput(); err != nil {
-		log.Errorf("Unable to delete target: %s at portal: %s. Error output: %s",
+		co.Errorf(ctxt, "Unable to delete target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
 			string(out))
@@ -663,7 +663,7 @@ func doLogout(uuid, portal, iqn string) {
 	if diskPath != "" {
 		disk := filepath.Base(diskPath)
 		if out, err := co.ExecC("multipath", "-f", disk).CombinedOutput(); err != nil {
-			log.Errorf("Unable to flush multipath device: %s", disk, string(out))
+			co.Errorf(ctxt, "Unable to flush multipath device: %s", disk, string(out))
 		}
 	}
 }

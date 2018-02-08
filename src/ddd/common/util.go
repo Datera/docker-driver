@@ -2,13 +2,20 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
 	"text/template"
 
+	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	ReqName = "req"
+	TraceId = "tid"
 )
 
 // Binding this to an exported function for
@@ -16,6 +23,8 @@ import (
 var (
 	OS         ISystem
 	FileReader ReadFile
+	host, _    = os.Hostname()
+	topctxt    = context.WithValue(context.Background(), "host", host)
 )
 
 // "OS" interface to allow for mocking purposes in tests
@@ -79,4 +88,68 @@ func Tsprint(s string, m map[string]string) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+func GenId() string {
+	return uuid.Must(uuid.NewV4()).String()
+}
+
+func MkCtxt(reqName string) context.Context {
+	ctxt := context.WithValue(topctxt, TraceId, GenId())
+	ctxt = context.WithValue(ctxt, ReqName, reqName)
+	return ctxt
+}
+
+func Debug(ctxt context.Context, s interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Debug(s)
+}
+
+func Debugf(ctxt context.Context, s string, args ...interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Debugf(s, args)
+}
+
+func Infof(ctxt context.Context, s string, args ...interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Infof(s, args)
+}
+
+func Warningf(ctxt context.Context, s string, args ...interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Warningf(s, args)
+}
+
+func Errorf(ctxt context.Context, s string, args ...interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Errorf(s, args)
+}
+
+func Error(ctxt context.Context, s interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Error(s)
 }
