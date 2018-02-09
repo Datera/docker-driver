@@ -55,7 +55,7 @@ func NewClient(ctxt context.Context, addr, username, password, tenant string, de
 
 func (r Client) VolumeExist(ctxt context.Context, name string) (bool, error) {
 	co.Debugf(ctxt, "VolumeExist invoked for %s", name)
-	_, err := r.Api.GetEp("app_instances").GetEp(name).Get()
+	_, err := r.Api.GetEp("app_instances").GetEp(name).Get(ctxt)
 	if err != nil {
 		co.Debugf(ctxt, "Volume %s not found", name)
 		return false, err
@@ -100,7 +100,7 @@ func (r Client) CreateVolume(ctxt context.Context, name string, volOpts *VolOpts
 			StorageInstances: &[]dsdk.StorageInstance{si},
 		}
 	}
-	_, err := r.Api.GetEp("app_instances").Create(ai)
+	_, err := r.Api.GetEp("app_instances").Create(ctxt, ai)
 	if err != nil {
 		co.Error(ctxt, err)
 		return err
@@ -115,7 +115,7 @@ func (r Client) CreateVolume(ctxt context.Context, name string, volOpts *VolOpts
 		_, err = r.Api.GetEp("app_instances").GetEp(name).GetEp(
 			"storage_instances").GetEp(StorageName).GetEp(
 			"volumes").GetEp(VolumeName).GetEp(
-			"performance_policy").Create(pp)
+			"performance_policy").Create(ctxt, pp)
 	}
 
 	return nil
@@ -135,14 +135,14 @@ func (r Client) CreateACL(ctxt context.Context, name string, random bool) error 
 	iep := r.Api.GetEp("initiators")
 
 	// Check if initiator exists
-	init, err := iep.GetEp(initiator).Get()
+	init, err := iep.GetEp(initiator).Get(ctxt)
 
 	var path string
 	if err != nil {
 		// Create the initiator
 		iname, _ := dsdk.NewUUID()
 		iname = IGPrefix + iname
-		_, err = iep.Create(fmt.Sprintf("name=%s", iname), fmt.Sprintf("id=%s", initiator))
+		_, err = iep.Create(ctxt, fmt.Sprintf("name=%s", iname), fmt.Sprintf("id=%s", initiator))
 		path = fmt.Sprintf("/initiators/%s", initiator)
 	} else {
 		path = init.GetM()["path"].(string)
@@ -156,7 +156,7 @@ func (r Client) CreateACL(ctxt context.Context, name string, random bool) error 
 		Initiators: &[]dsdk.Initiator{myInit},
 	}
 	aclep := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).GetEp("acl_policy")
-	_, err = aclep.Set(aclp)
+	_, err = aclep.Set(ctxt, aclp)
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func (r Client) DetachVolume(ctxt context.Context, name string) error {
 	co.Debugf(ctxt, "DetachVolume invoked for %s", name)
 
 	siep := r.Api.GetEp("app_instances").GetEp(name)
-	_, err := siep.Set("admin_state=offline", "force=true")
+	_, err := siep.Set(ctxt, "admin_state=offline", "force=true")
 	if err != nil {
 		return err
 	}
@@ -184,13 +184,13 @@ func (r Client) DeleteVolume(ctxt context.Context, name, mountpoint string) erro
 		return err
 	}
 
-	aiep, err := r.Api.GetEp("app_instances").GetEp(name).Get()
+	aiep, err := r.Api.GetEp("app_instances").GetEp(name).Get(ctxt)
 	// If we don't find the app_instance, fail quietly
 	if err != nil {
 		co.Debugf(ctxt, "Could not find app_instance %s", name)
 		return nil
 	}
-	err = aiep.Delete()
+	err = aiep.Delete(ctxt)
 	if err != nil {
 		co.Debug(ctxt, err)
 		return nil
@@ -202,7 +202,7 @@ func (r Client) DeleteVolume(ctxt context.Context, name, mountpoint string) erro
 func (r Client) GetIQNandPortals(ctxt context.Context, name string) (string, []string, string, error) {
 	co.Debugf(ctxt, "GetIQNandPortals invoked for: %s", name)
 
-	si, err := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).Get()
+	si, err := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).Get(ctxt)
 	if err != nil {
 		co.Debugf(ctxt, "Couldn't find target, Error: %s", err)
 		return "", []string{}, "", err
@@ -253,14 +253,14 @@ func (r Client) FindDeviceFsType(ctxt context.Context, diskPath string) (string,
 
 func (r Client) OnlineVolume(ctxt context.Context, name string) error {
 	aiep := r.Api.GetEp("app_instances").GetEp(name)
-	ai, err := aiep.Set("admin_state=online")
+	ai, err := aiep.Set(ctxt, "admin_state=online")
 	if err != nil {
 		co.Debugf(ctxt, "Couldn't find AppInstance, Error: %s", err)
 		return err
 	}
 	timeout := 10
 	for {
-		ai, err = aiep.Get()
+		ai, err = aiep.Get(ctxt)
 		myAi, err := dsdk.NewAppInstance(ai.GetB())
 		if err != nil {
 			co.Debugf(ctxt, "Couldn't unpack AppInstance, Error: %s", err)

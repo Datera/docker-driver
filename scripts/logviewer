@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import print_function, unicode_literals, division
+
 import argparse
 import io
 import json
@@ -22,7 +24,9 @@ def main(args):
     for line in f:
         if args.message_only:
             try:
-                print(helper(json.loads(line)["msg"], args.oneline))
+                d = json.loads(line)
+                print("---------\n", d.get("req"), d.get("tid"),
+                      helper(d["msg"], args.oneline))
             except ValueError:
                 pass
         else:
