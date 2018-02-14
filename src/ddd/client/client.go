@@ -42,7 +42,7 @@ type VolOpts struct {
 
 func NewClient(ctxt context.Context, addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
 	headers := make(map[string]string)
-	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "ddd.log", true)
+	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "", true)
 	co.PanicErr(err)
 	co.PrepareDB()
 	client := &Client{
@@ -238,7 +238,7 @@ func (r Client) FindDeviceFsType(ctxt context.Context, diskPath string) (string,
 
 	var out []byte
 	var err error
-	if out, err = co.ExecC("blkid", diskPath).CombinedOutput(); err != nil {
+	if out, err = co.ExecC(ctxt, "blkid", diskPath).CombinedOutput(); err != nil {
 		co.Debugf(ctxt, "Error finding FsType: %s, out: %s", err, out)
 		return "", err
 	}
@@ -456,13 +456,13 @@ func doLogin(ctxt context.Context, name string, portals []string, iqn, uuid stri
 
 	for _, portal := range usePortals {
 		if out, err :=
-			co.ExecC("iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
+			co.ExecC(ctxt, "iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", portal+":3260").CombinedOutput(); err != nil {
 			co.Debugf(ctxt, "Unable to discover targets at portal: %s. Error output: %s", portal, string(out))
 			return diskPath, err
 		}
 
 		if out, err :=
-			co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
+			co.ExecC(ctxt, "iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--login").CombinedOutput(); err != nil {
 			co.Debugf(ctxt, "Unable to login to target: %s at portal: %s. Error output: %s",
 				iqn,
 				portal,
@@ -488,10 +488,10 @@ func doMount(ctxt context.Context, sourceDisk string, destination string, fsType
 		fsType,
 		mountOptions)
 
-	co.ExecC("fsck", "-a", sourceDisk).CombinedOutput()
+	co.ExecC(ctxt, "fsck", "-a", sourceDisk).CombinedOutput()
 
 	if out, err :=
-		co.ExecC("mount", "-t", fsType,
+		co.ExecC(ctxt, "mount", "-t", fsType,
 			"-o", strings.Join(mountOptions, ","), sourceDisk, destination).CombinedOutput(); err != nil {
 		co.Warningf(ctxt, "mount failed for volume: %s. output: %s, error: %s", sourceDisk, string(out), err)
 		co.Infof(ctxt, "Checking for disk formatting: %s", sourceDisk)
@@ -499,20 +499,20 @@ func doMount(ctxt context.Context, sourceDisk string, destination string, fsType
 		if fsType == "ext4" {
 			co.Debugf(ctxt, "ext4 block fsType: %s", fsType)
 			_, err =
-				co.ExecC("mkfs."+fsType, "-E",
+				co.ExecC(ctxt, "mkfs."+fsType, "-E",
 					"lazy_itable_init=0,lazy_journal_init=0,nodiscard", "-F", sourceDisk).CombinedOutput()
 		} else if fsType == "xfs" {
 			co.Debugf(ctxt, "fsType: %s", fsType)
 			_, err =
-				co.ExecC("mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
+				co.ExecC(ctxt, "mkfs."+fsType, "-K", sourceDisk).CombinedOutput()
 		} else {
 			co.Debugf(ctxt, "fsType: %s", fsType)
 			_, err =
-				co.ExecC("mkfs."+fsType, sourceDisk).CombinedOutput()
+				co.ExecC(ctxt, "mkfs."+fsType, sourceDisk).CombinedOutput()
 		}
 		if err == nil {
 			co.Debug(ctxt, "Done with formatting, mounting again.")
-			if _, err := co.ExecC("mount", "-t", fsType,
+			if _, err := co.ExecC(ctxt, "mount", "-t", fsType,
 				"-o", strings.Join(mountOptions, ","),
 				sourceDisk, destination).CombinedOutput(); err != nil {
 				co.Errorf(ctxt, "Error in mounting. Error: %s", err)
@@ -535,7 +535,7 @@ func doUnmount(ctxt context.Context, destination string, retries int) error {
 
 	var err error
 	for i := 0; i < retries; i++ {
-		if out, err := co.ExecC("umount", destination).CombinedOutput(); err != nil {
+		if out, err := co.ExecC(ctxt, "umount", destination).CombinedOutput(); err != nil {
 			co.Debugf(ctxt, "doUnmount:: Unmounting failed for: %s. output: %s, error %s", destination, out, err)
 			if strings.Contains(string(out), "not mounted") || strings.Contains(string(out), "not currently mounted") {
 				err = nil
@@ -552,7 +552,7 @@ func doUnmount(ctxt context.Context, destination string, retries int) error {
 		return err
 	}
 
-	if _, err = co.ExecC("rmdir", destination).CombinedOutput(); err != nil {
+	if _, err = co.ExecC(ctxt, "rmdir", destination).CombinedOutput(); err != nil {
 		co.Warningf(ctxt, "Couldn't remove directory: %s, err: %s", destination, err)
 	}
 
@@ -563,7 +563,7 @@ func doUnmount(ctxt context.Context, destination string, retries int) error {
 
 func isMultipathEnabled(ctxt context.Context) bool {
 	cmd := "ps -ef | grep multipathd | grep -v grep | wc -l"
-	if out, err := co.ExecC("bash", "-c", cmd).CombinedOutput(); err != nil {
+	if out, err := co.ExecC(ctxt, "bash", "-c", cmd).CombinedOutput(); err != nil {
 		co.Debug(ctxt, "Host does not support multipathing.")
 		return false
 	} else {
@@ -647,14 +647,14 @@ func doLogout(ctxt context.Context, uuid, portal, iqn string) {
 	uuidPath := fmt.Sprintf("/dev/disk/by-uuid/%s", uuid)
 	diskPath, _ := getMultipathDisk(ctxt, uuidPath)
 	if out, err :=
-		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
+		co.ExecC(ctxt, "iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--logout").CombinedOutput(); err != nil {
 		co.Errorf(ctxt, "Unable to logout target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
 			string(out))
 	}
 	if out, err :=
-		co.ExecC("iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--op=delete").CombinedOutput(); err != nil {
+		co.ExecC(ctxt, "iscsiadm", "-m", "node", "-p", portal+":3260", "-T", iqn, "--op=delete").CombinedOutput(); err != nil {
 		co.Errorf(ctxt, "Unable to delete target: %s at portal: %s. Error output: %s",
 			iqn,
 			portal,
@@ -662,7 +662,7 @@ func doLogout(ctxt context.Context, uuid, portal, iqn string) {
 	}
 	if diskPath != "" {
 		disk := filepath.Base(diskPath)
-		if out, err := co.ExecC("multipath", "-f", disk).CombinedOutput(); err != nil {
+		if out, err := co.ExecC(ctxt, "multipath", "-f", disk).CombinedOutput(); err != nil {
 			co.Errorf(ctxt, "Unable to flush multipath device: %s", disk, string(out))
 		}
 	}

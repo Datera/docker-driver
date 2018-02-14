@@ -66,9 +66,9 @@ func PanicErr(err error) {
 	}
 }
 
-func ExecC(name string, arg ...string) *exec.Cmd {
+func ExecC(ctxt context.Context, name string, arg ...string) *exec.Cmd {
 	cmd := name + " " + strings.Join(arg, " ")
-	log.Debugf("Executing Command: %s", cmd)
+	Debugf(ctxt, "Executing Command: %s", cmd)
 	return exec.Command(name, arg...)
 }
 
@@ -152,4 +152,22 @@ func Error(ctxt context.Context, s interface{}) {
 		ReqName: reqname,
 		TraceId: tid,
 	}).Error(s)
+}
+
+func Fatal(ctxt context.Context, s interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Fatal(s)
+}
+
+func Fatalf(ctxt context.Context, s string, args ...interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Fatalf(s, args)
 }

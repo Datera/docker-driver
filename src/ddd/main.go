@@ -20,7 +20,6 @@ import (
 
 const (
 	sockName          = "datera"
-	logFile           = "ddd.log"
 	defaultConfigFile = ".datera-config-file"
 	genConfigFile     = "datera-config-template.txt"
 )
@@ -143,11 +142,12 @@ func main() {
 		GenConfig()
 		os.Exit(0)
 	}
+	ctxt := co.MkCtxt("Main")
 
 	if *config == "" {
 		usr, err := user.Current()
 		if err != nil {
-			log.Fatal("Couldn't determine current user")
+			co.Fatal(ctxt, "Couldn't determine current user")
 		}
 		*config = path.Join(usr.HomeDir, defaultConfigFile)
 	}
@@ -155,20 +155,11 @@ func main() {
 	conf, err := ParseConfig(*config)
 	if err != nil {
 		Usage()
-		log.Fatalf("%s", err)
+		co.Fatal(ctxt, err)
 		os.Exit(1)
 	}
 
-	// Create log file
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
-	if err != nil {
-		fmt.Printf("error opening file: %v", err)
-	}
-	defer f.Close()
-	log.SetOutput(f)
-	log.Infof(
-		"Options: datera-cluster: %s, username: %s, password: %s",
-		conf.DateraCluster, conf.Username, "*******")
+	co.Debugf(ctxt, "Options: datera-cluster: %s, username: %s, password: %s", conf.DateraCluster, conf.Username, "*******")
 
 	// Overriding these so tests can replace them
 	co.OS = co.System{}
@@ -178,12 +169,12 @@ func main() {
 	h := dv.NewHandler(d)
 	u, err := user.Lookup(conf.OsUser)
 	if err != nil {
-		log.Errorf("Could not look up GID for user %s", conf.OsUser)
+		co.Errorf(ctxt, "Could not look up GID for user %s", conf.OsUser)
 		os.Exit(2)
 	}
 	gid, err := strconv.Atoi(u.Gid)
 	if err != nil {
-		log.Errorf("Could not convert gid to int: %s", u.Gid)
+		co.Errorf(ctxt, "Could not convert gid to int: %s", u.Gid)
 		os.Exit(3)
 	}
 	// Start log daemon process after an initial sleep
@@ -192,6 +183,6 @@ func main() {
 		co.LogUploadDaemon(conf.DateraCluster, conf.Username, conf.Password, "datera-ddd.bin", 60)
 	}()
 
-	log.Debugf("listening on %s.sock\n", sockName)
-	log.Debug(h.ServeUnix(sockName, gid))
+	co.Debugf(ctxt, "listening on %s.sock\n", sockName)
+	co.Debug(ctxt, h.ServeUnix(sockName, gid))
 }

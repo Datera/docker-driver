@@ -11,8 +11,7 @@ all:
 
 linux:
 	rm -f -- dddbin
-	docker build --no-cache -t ${IMGNAME} .
-	docker cp $(shell docker run -d -it --entrypoint "true" ${IMGNAME}):/go/docker-driver/dddbin .
+	docker cp $(shell docker run -d -it --entrypoint "true" $(shell docker build --no-cache -t ${IMGNAME} . | pcregrep -o "Successfully built \K.*")):/go/docker-driver/dddbin .
 
 fast:
 	env GOPATH=${GOPATH} go get ${DIRNAME}
