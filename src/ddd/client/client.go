@@ -17,55 +17,99 @@ import (
 
 const (
 	initiatorFile = "/etc/iscsi/initiatorname.iscsi"
-	rBytes        = "0123456789abcdef"
 	StorageName   = "storage-1"
 	VolumeName    = "volume-1"
-	IGPrefix      = "Docker-Driver-"
+	Prefix        = "DVOLD-"
 )
 
 type Client struct {
-	Debug bool
+	Debug *bool
 	Api   *dsdk.SDK
+	Conf  *Config
+}
+
+type Config struct {
+	DateraCluster string   `json:"datera-cluster"`
+	Username      string   `json:"username"`
+	Password      string   `json:"password"`
+	Ssl           bool     `json:"ssl"`
+	Tenant        string   `json:"tenant,omitempty"`
+	OsUser        string   `json:"os-user,omitempty"`
+	Debug         bool     `json:"debug,omitempty"`
+	Framework     string   `json:"framework,omitempty"`
+	Volume        *VolOpts `json:"volume,omitempty"`
 }
 
 type VolOpts struct {
-	Size          uint64
-	Replica       uint64
-	Template      string
-	FsType        string
-	MaxIops       uint64
-	MaxBW         uint64
-	PlacementMode string
-	Persistence   string
-	CloneSrc      string
+	Size          uint64 `json:"size,omitempty"`
+	Replica       uint64 `json:"replica,omitempty"`
+	Template      string `json:"placement,omitempty"`
+	FsType        string `json:"maxiops,omitempty"`
+	MaxIops       uint64 `json:"maxbw,omitempty"`
+	MaxBW         uint64 `json:"template,omitempty"`
+	PlacementMode string `json:"fstype,omitempty"`
+	Persistence   string `json:"persistence,omitempty"`
+	CloneSrc      string `json:"clone-src,omitempty"`
 }
 
-func NewClient(ctxt context.Context, addr, username, password, tenant string, debug, ssl bool, driver, version string) *Client {
+func NewClient(ctxt context.Context, conf *Config) *Client {
 	headers := make(map[string]string)
-	Api, err := dsdk.NewSDK(addr, username, password, "2.1", tenant, "30s", headers, false, "", true)
+	Api, err := dsdk.NewSDK(conf.DateraCluster, conf.Username, conf.Password, "2.1", conf.Tenant, "30s", headers, false, "", true)
 	co.PanicErr(err)
-	co.PrepareDB()
 	client := &Client{
 		Api:   Api,
-		Debug: debug,
+		Debug: &conf.Debug,
 	}
 	co.Debugf(ctxt, "Client: %#v", client)
 	return client
 }
 
-func (r Client) VolumeExist(ctxt context.Context, name string) (bool, error) {
-	co.Debugf(ctxt, "VolumeExist invoked for %s", name)
-	_, err := r.Api.GetEp("app_instances").GetEp(name).Get(ctxt)
+func (r Client) GetMetadata(ctxt context.Context, name string) (*map[string]interface{}, error) {
+	co.Debugf(ctxt, "GetMetadata invoked for %s", name)
+	meta, err := r.Api.GetEp("app_instances").GetEp(getName(name)).GetEp("metadata").Get(ctxt)
 	if err != nil {
-		co.Debugf(ctxt, "Volume %s not found", name)
-		return false, err
+		co.Debugf(ctxt, "Metadata for volume %s not found. err: %s", name, err)
+		return nil, err
+	}
+	m := make(map[string]interface{}, 10)
+	co.Debugf(ctxt, "Metadata raw: %s", string(meta.GetB()))
+	if err = co.Unpack(meta.GetB(), &m); err != nil {
+		return nil, err
+	}
+	co.Debugf(ctxt, "Pulled Metadata from volume %s.  Metadata: %s", name, co.Prettify(m))
+	return &m, nil
+}
+
+func (r Client) PutMetadata(ctxt context.Context, name string, m *map[string]interface{}) error {
+	co.Debugf(ctxt, "PutMetadata invoked for %s", name)
+	co.Debugf(ctxt, "Setting metadata for volume %s, metadata %s", name, co.Prettify(m))
+	_, err := r.Api.GetEp("app_instances").GetEp(getName(name)).GetEp("metadata").Set(ctxt, *m)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r Client) GetVolume(ctxt context.Context, name string) (*dsdk.AppInstance, error) {
+	co.Debugf(ctxt, "GetVolume invoked for %s", name)
+	name = getName(name)
+	ai, err := r.Api.GetEp("app_instances").GetEp(name).Get(ctxt)
+	if err != nil {
+		co.Debugf(ctxt, "Volume %s not found. err: %s", name, err)
+		return nil, err
 	}
 	co.Debugf(ctxt, "Volume %s found", name)
-	return true, nil
+	myAi, err := dsdk.NewAppInstance(ai.GetB())
+	if err != nil {
+		co.Errorf(ctxt, "Could not unpack volume %s, err %s", name, err)
+		return nil, err
+	}
+	return &myAi, nil
 }
 
 func (r Client) CreateVolume(ctxt context.Context, name string, volOpts *VolOpts) error {
 	co.Debugf(ctxt, "CreateVolume invoked for %s, volOpts: %s", name, co.Prettify(volOpts))
+	name = getName(name)
 	var ai dsdk.AppInstance
 	if volOpts.Template != "" {
 		template := strings.Trim(volOpts.Template, "/")
@@ -123,14 +167,12 @@ func (r Client) CreateVolume(ctxt context.Context, name string, volOpts *VolOpts
 
 func (r Client) CreateACL(ctxt context.Context, name string, random bool) error {
 	co.Debugf(ctxt, "CreateACL invoked for %s", name)
-	// Parse InitiatorName
-	dat, err := co.FileReader(initiatorFile)
+	name = getName(name)
+	initiator, err := getInitName(ctxt)
 	if err != nil {
-		co.Debugf(ctxt, "Could not read file %s", initiatorFile)
+		co.Error(ctxt, err)
 		return err
 	}
-	initiator := strings.Split(strings.TrimSpace(string(dat)), "=")[1]
-	co.Debugf(ctxt, initiator)
 
 	iep := r.Api.GetEp("initiators")
 
@@ -141,7 +183,7 @@ func (r Client) CreateACL(ctxt context.Context, name string, random bool) error 
 	if err != nil {
 		// Create the initiator
 		iname, _ := dsdk.NewUUID()
-		iname = IGPrefix + iname
+		iname = Prefix + iname
 		_, err = iep.Create(ctxt, fmt.Sprintf("name=%s", iname), fmt.Sprintf("id=%s", initiator))
 		path = fmt.Sprintf("/initiators/%s", initiator)
 	} else {
@@ -152,11 +194,25 @@ func (r Client) CreateACL(ctxt context.Context, name string, random bool) error 
 	myInit := dsdk.Initiator{
 		Path: path,
 	}
-	aclp := dsdk.AclPolicy{
-		Initiators: &[]dsdk.Initiator{myInit},
-	}
+
+	// Update existing AclPolicy if it exists
 	aclep := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).GetEp("acl_policy")
-	_, err = aclep.Set(ctxt, aclp)
+	eacl, err := aclep.Get(ctxt)
+	if err != nil {
+		co.Error(ctxt, err)
+		return err
+	}
+	acl, err := dsdk.NewAclPolicy(eacl.GetB())
+	if err != nil {
+		co.Error(ctxt, err)
+		return err
+	}
+	// Add the new initiator to the initiator list
+	newit := append(*acl.Initiators, myInit)
+	acl.Initiators = &newit
+	acl.Path = ""
+
+	_, err = aclep.Set(ctxt, acl)
 	if err != nil {
 		return err
 	}
@@ -165,10 +221,12 @@ func (r Client) CreateACL(ctxt context.Context, name string, random bool) error 
 
 func (r Client) DetachVolume(ctxt context.Context, name string) error {
 	co.Debugf(ctxt, "DetachVolume invoked for %s", name)
+	name = getName(name)
 
-	siep := r.Api.GetEp("app_instances").GetEp(name)
-	_, err := siep.Set(ctxt, "admin_state=offline", "force=true")
+	aiep := r.Api.GetEp("app_instances").GetEp(name)
+	_, err := aiep.Set(ctxt, "admin_state=offline", "force=true")
 	if err != nil {
+		co.Info(ctxt, err)
 		return err
 	}
 
@@ -177,6 +235,7 @@ func (r Client) DetachVolume(ctxt context.Context, name string) error {
 
 func (r Client) DeleteVolume(ctxt context.Context, name, mountpoint string) error {
 	co.Debugf(ctxt, "DeleteVolume invoked for %s", name)
+	name = getName(name)
 
 	err := r.DetachVolume(ctxt, name)
 	if err != nil {
@@ -201,6 +260,7 @@ func (r Client) DeleteVolume(ctxt context.Context, name, mountpoint string) erro
 
 func (r Client) GetIQNandPortals(ctxt context.Context, name string) (string, []string, string, error) {
 	co.Debugf(ctxt, "GetIQNandPortals invoked for: %s", name)
+	name = getName(name)
 
 	si, err := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).Get(ctxt)
 	if err != nil {
@@ -234,7 +294,7 @@ func (r Client) GetIQNandPortals(ctxt context.Context, name string) (string, []s
 }
 
 func (r Client) FindDeviceFsType(ctxt context.Context, diskPath string) (string, error) {
-	co.Debug(ctxt, "FindDeviceFsType invoked")
+	co.Debugf(ctxt, "FindDeviceFsType invoked, diskPath %s", diskPath)
 
 	var out []byte
 	var err error
@@ -252,6 +312,8 @@ func (r Client) FindDeviceFsType(ctxt context.Context, diskPath string) (string,
 }
 
 func (r Client) OnlineVolume(ctxt context.Context, name string) error {
+	co.Debugf(ctxt, "OnlineVolume invoked for: %s", name)
+	name = getName(name)
 	aiep := r.Api.GetEp("app_instances").GetEp(name)
 	ai, err := aiep.Set(ctxt, "admin_state=online")
 	if err != nil {
@@ -281,6 +343,7 @@ func (r Client) OnlineVolume(ctxt context.Context, name string) error {
 
 func (r Client) LoginVolume(ctxt context.Context, name string, destination string) (string, error) {
 	co.Debugf(ctxt, "LoginVolume invoked for: %s", name)
+	name = getName(name)
 	if err := r.OnlineVolume(ctxt, name); err != nil {
 		return "", err
 	}
@@ -342,6 +405,7 @@ func (r Client) LoginVolume(ctxt context.Context, name string, destination strin
 func (r Client) MountVolume(ctxt context.Context, name, destination, fsType, diskPath string) error {
 	co.Debugf(ctxt, "MountVolume invoked for: %s, destination: %s, fsType: %s, diskPath: %s", name, destination, fsType, diskPath)
 	// wait for disk to be available after target login
+	name = getName(name)
 
 	diskAvailable := waitForDisk(ctxt, diskPath, 10)
 	if !diskAvailable {
@@ -372,6 +436,8 @@ func (r Client) MountVolume(ctxt context.Context, name, destination, fsType, dis
 }
 
 func (r Client) UnmountVolume(ctxt context.Context, name string, destination string) error {
+	co.Debugf(ctxt, "UnmountVolume invoked for: %s, destination: %s", name, destination)
+	name = getName(name)
 	iqn, portals, uuid, err := r.GetIQNandPortals(ctxt, name)
 	if err != nil {
 		co.Errorf(ctxt, "UnmountVolume:: Unable to find IQN and portal for: %s.", name)
@@ -390,7 +456,61 @@ func (r Client) UnmountVolume(ctxt context.Context, name string, destination str
 
 	co.Debug(ctxt, "UnmountVolume: iscsi session logout successful.")
 
+	initiator, err := getInitName(ctxt)
+	if err != nil {
+		co.Error(ctxt, err)
+		return err
+	}
+	// Remove entry from ACL (in case another node is also attached)
+	aclep := r.Api.GetEp("app_instances").GetEp(name).GetEp("storage_instances").GetEp(StorageName).GetEp("acl_policy")
+	eacl, err := aclep.Get(ctxt)
+	if err != nil {
+		co.Info(ctxt, err)
+		return err
+	}
+	acl, err := dsdk.NewAclPolicy(eacl.GetB())
+	if err != nil {
+		co.Info(ctxt, err)
+		return err
+	}
+	var newinits []dsdk.Initiator
+	path := fmt.Sprintf("/initiators/%s", initiator)
+	for i, init := range *acl.Initiators {
+		if init.Path == path {
+			newinits = append((*acl.Initiators)[:i], (*acl.Initiators)[i+1:]...)
+			break
+		}
+	}
+	acl.Initiators = &newinits
+	acl.Path = ""
+	_, err = aclep.Set(ctxt, acl)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (r Client) ListVolumes(ctxt context.Context) ([]string, error) {
+
+	vNames := []string{}
+	ais, err := r.Api.GetEp("app_instances").List(ctxt)
+	if err != nil {
+		return vNames, nil
+	}
+
+	for _, ai := range ais {
+		myAi, err := dsdk.NewAppInstance(ai.GetB())
+		if err != nil {
+			return vNames, err
+		}
+		if strings.HasPrefix(myAi.Name, Prefix) {
+			vNames = append(vNames, stripName(myAi.Name))
+		}
+	}
+	co.Debugf(ctxt, "Found volumes: %s", vNames)
+
+	return vNames, nil
 }
 
 func getMultipathDisk(ctxt context.Context, path string) (string, error) {
@@ -442,6 +562,8 @@ func doLogin(ctxt context.Context, name string, portals []string, iqn, uuid stri
 			if err != nil {
 				return diskPath, err
 			}
+		} else {
+			diskPath = uuidPath
 		}
 		co.Debugf(ctxt, "Disk: %s is already available.", diskPath)
 		return diskPath, nil
@@ -666,4 +788,28 @@ func doLogout(ctxt context.Context, uuid, portal, iqn string) {
 			co.Errorf(ctxt, "Unable to flush multipath device: %s", disk, string(out))
 		}
 	}
+}
+
+func getName(name string) string {
+	if strings.HasPrefix(name, Prefix) {
+		return name
+	}
+	return Prefix + name
+}
+
+func stripName(name string) string {
+	return strings.TrimLeft(name, Prefix)
+}
+
+func getInitName(ctxt context.Context) (string, error) {
+	// Parse InitiatorName
+	dat, err := co.FileReader(initiatorFile)
+	if err != nil {
+		co.Debugf(ctxt, "Could not read file %s", initiatorFile)
+		return "", err
+	}
+	initiator := strings.Split(strings.TrimSpace(string(dat)), "=")[1]
+	co.Debugf(ctxt, initiator)
+
+	return initiator, nil
 }

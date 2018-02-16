@@ -77,6 +77,10 @@ func Prettify(v interface{}) string {
 	return string(b)
 }
 
+func Unpack(b []byte, m *map[string]interface{}) error {
+	return json.Unmarshal(b, m)
+}
+
 func Tsprint(s string, m map[string]string) (string, error) {
 	tpl, err := template.New("format").Parse(s)
 	if err != nil {
@@ -110,39 +114,61 @@ func Debug(ctxt context.Context, s interface{}) {
 }
 
 func Debugf(ctxt context.Context, s string, args ...interface{}) {
+	checkArgs(ctxt, s, args...)
 	reqname := ctxt.Value(ReqName).(string)
 	tid := ctxt.Value(TraceId).(string)
 	log.WithFields(log.Fields{
 		ReqName: reqname,
 		TraceId: tid,
-	}).Debugf(s, args)
+	}).Debugf(s, args...)
+}
+
+func Info(ctxt context.Context, s interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Info(s)
 }
 
 func Infof(ctxt context.Context, s string, args ...interface{}) {
+	checkArgs(ctxt, s, args...)
 	reqname := ctxt.Value(ReqName).(string)
 	tid := ctxt.Value(TraceId).(string)
 	log.WithFields(log.Fields{
 		ReqName: reqname,
 		TraceId: tid,
-	}).Infof(s, args)
+	}).Infof(s, args...)
+}
+
+func Warning(ctxt context.Context, s interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Warning(s)
 }
 
 func Warningf(ctxt context.Context, s string, args ...interface{}) {
+	checkArgs(ctxt, s, args...)
 	reqname := ctxt.Value(ReqName).(string)
 	tid := ctxt.Value(TraceId).(string)
 	log.WithFields(log.Fields{
 		ReqName: reqname,
 		TraceId: tid,
-	}).Warningf(s, args)
+	}).Warningf(s, args...)
 }
 
 func Errorf(ctxt context.Context, s string, args ...interface{}) {
+	checkArgs(ctxt, s, args...)
 	reqname := ctxt.Value(ReqName).(string)
 	tid := ctxt.Value(TraceId).(string)
 	log.WithFields(log.Fields{
 		ReqName: reqname,
 		TraceId: tid,
-	}).Errorf(s, args)
+	}).Errorf(s, args...)
 }
 
 func Error(ctxt context.Context, s interface{}) {
@@ -164,10 +190,23 @@ func Fatal(ctxt context.Context, s interface{}) {
 }
 
 func Fatalf(ctxt context.Context, s string, args ...interface{}) {
+	checkArgs(ctxt, s, args...)
 	reqname := ctxt.Value(ReqName).(string)
 	tid := ctxt.Value(TraceId).(string)
 	log.WithFields(log.Fields{
 		ReqName: reqname,
 		TraceId: tid,
-	}).Fatalf(s, args)
+	}).Fatalf(s, args...)
+}
+
+// Hack just to make sure I don't miss these
+func checkArgs(ctxt context.Context, s string, args ...interface{}) {
+	c := 0
+	for _, f := range []string{"%s", "%d", "%v", "%#v", "%t", "%p"} {
+		c += strings.Count(s, f)
+	}
+	l := len(args)
+	if c != l {
+		Warningf(ctxt, "Wrong number of args for format string, [%d != %d]", l, c)
+	}
 }

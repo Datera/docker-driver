@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	dc "ddd/client"
 	co "ddd/common"
 	dd "ddd/driver"
 	dv "github.com/docker/go-plugins-helpers/volume"
@@ -43,19 +44,8 @@ Use -genconfig option to generate this file
 var (
 	version   = flag.Bool("version", false, "Print version info")
 	config    = flag.String("config", "", "Config File Location")
-	genconfig = flag.Bool("genconfig", false, fmt.Sprintf("Generate Config Template. Creates '%s' file", genConfigFile))
-	showenvs  = flag.Bool("show-envs", false, "Print the supported environment variables for use with Docker under DCOS")
+	genconfig = flag.String("genconfig", "", fmt.Sprintf("Generate Config Template. Options: 'bare', 'dcos-docker' and 'dcos-mesos'. Creates '%s' file", genConfigFile))
 )
-
-type Config struct {
-	DateraCluster string `json:"datera-cluster"`
-	Username      string `json:"username"`
-	Password      string `json:"password"`
-	Ssl           bool   `json:"ssl"`
-	Tenant        string `json:"tenant,omitempty"`
-	OsUser        string `json:"os-user,omitempty"`
-	Debug         bool   `json:"debug,omitempty"`
-}
 
 func Usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
@@ -70,8 +60,8 @@ file template in this directory
 	fmt.Fprintf(os.Stderr, "%s", msg)
 }
 
-func GenConfig() error {
-	data := Config{
+func GenConfigBare() error {
+	data := dc.Config{
 		DateraCluster: "1.1.1.1",
 		Username:      "my-user",
 		Password:      "my-pass",
@@ -79,8 +69,54 @@ func GenConfig() error {
 		Ssl:           true,
 		Tenant:        "/root",
 		OsUser:        "root",
+		Framework:     "bare",
 	}
 
+	return WriteConfig(&data)
+}
+
+func GenConfigDcosMesos() error {
+	data := dc.Config{
+		DateraCluster: "1.1.1.1",
+		Username:      "my-user",
+		Password:      "my-pass",
+		Debug:         false,
+		Ssl:           true,
+		Tenant:        "/root",
+		OsUser:        "root",
+		Framework:     "dcos-mesos",
+	}
+
+	return WriteConfig(&data)
+}
+
+func GenConfigDcosDocker() error {
+	// vdata := dc.VolOpts{
+	// 	Size:          16,
+	// 	Replica:       3,
+	// 	PlacementMode: "hybrid",
+	// 	MaxIops:       0,
+	// 	MaxBW:         0,
+	// 	Template:      "",
+	// 	FsType:        "ext4",
+	// 	Persistence:   "manual",
+	// 	CloneSrc:      "",
+	// }
+	data := dc.Config{
+		DateraCluster: "1.1.1.1",
+		Username:      "my-user",
+		Password:      "my-pass",
+		Debug:         false,
+		Ssl:           true,
+		Tenant:        "/root",
+		OsUser:        "root",
+		Framework:     "dcos-docker",
+	}
+
+	return WriteConfig(&data)
+}
+
+func WriteConfig(data *dc.Config) error {
 	j, err := json.MarshalIndent(&data, "", "    ")
 	if err != nil {
 		return err
@@ -89,8 +125,8 @@ func GenConfig() error {
 	return err
 }
 
-func ParseConfig(file string) (*Config, error) {
-	var conf Config
+func ParseConfig(file string) (*dc.Config, error) {
+	var conf dc.Config
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
 		return &conf, err
@@ -125,21 +161,20 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *showenvs {
-		fmt.Println(dd.EnvFwk, ": Datera framework.  Set to 'dcos' if running under DC/OS")
-		fmt.Println(dd.EnvSize, ": Datera volume size")
-		fmt.Println(dd.EnvReplica, ": Datera volume replica count")
-		fmt.Println(dd.EnvPlacement, ": Datera volume placement mode")
-		fmt.Println(dd.EnvMaxiops, ": Datera volume max iops")
-		fmt.Println(dd.EnvMaxbw, ": Datera volume max bandwidth")
-		fmt.Println(dd.EnvTemplate, ": Datera volume template")
-		fmt.Println(dd.EnvFstype, ": Datera volume filesystem, eg: ext4")
-		fmt.Println(dd.EnvPersistence, ": Datera volume filesystem, eg: ext4")
+	if *genconfig == "bare" {
+		if err := GenConfigBare(); err != nil {
+			fmt.Println(err)
+		}
 		os.Exit(0)
-	}
-
-	if *genconfig {
-		GenConfig()
+	} else if *genconfig == "dcos-docker" {
+		if err := GenConfigDcosDocker(); err != nil {
+			fmt.Println(err)
+		}
+		os.Exit(0)
+	} else if *genconfig == "dcos-mesos" {
+		if err := GenConfigDcosMesos(); err != nil {
+			fmt.Println(err)
+		}
 		os.Exit(0)
 	}
 	ctxt := co.MkCtxt("Main")
@@ -165,7 +200,7 @@ func main() {
 	co.OS = co.System{}
 	co.FileReader = ioutil.ReadFile
 
-	d := dd.NewDateraDriver(conf.DateraCluster, conf.Username, conf.Password, conf.Tenant, conf.Debug, !conf.Ssl)
+	d := dd.NewDateraDriver(conf)
 	h := dv.NewHandler(d)
 	u, err := user.Lookup(conf.OsUser)
 	if err != nil {

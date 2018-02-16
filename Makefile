@@ -6,7 +6,7 @@ REPONAME=dateraiodev
 
 all:
 	env GOPATH=${GOPATH} go get ${DIRNAME}
-	env GOPATH=${GOPATH} go build -ldflags '-extldflags "-static"' -o ${BINNAME} ${DIRNAME}
+	env GOPATH=${GOPATH} go build -ldflags '-linkmode external -extldflags -static' -o ${BINNAME} ${DIRNAME}
 	env GOPATH=${GOPATH} go vet ${DIRNAME}
 
 linux:
