@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "2.0.0"
+	DriverVersion      = "2.0.1"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -42,6 +42,7 @@ const (
 	//          FSType and persistence are tracked via metadata now.  Updated
 	//			Makefile to ensure static binaries are built. Added several
 	//			helper functions in util.go
+	// 2.0.1 -- Added /etc/iscsi as a rbind, rshared mount in the plugin config.json
 
 	DRIVER = "Docker-Volume"
 

@@ -34,6 +34,12 @@
             "destination": "/dev",
             "type": "bind",
             "options": ["rbind", "rshared"]
+        },
+        {
+            "source": "/etc/iscsi",
+            "destination": "/etc/iscsi",
+            "type": "bind",
+            "options": ["rbind", "rshared"]
         }
    ]
 }
