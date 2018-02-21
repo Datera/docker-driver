@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "2.0.1"
+	DriverVersion      = "2.0.2"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -43,6 +43,7 @@ const (
 	//			Makefile to ensure static binaries are built. Added several
 	//			helper functions in util.go
 	// 2.0.1 -- Added /etc/iscsi as a rbind, rshared mount in the plugin config.json
+	// 2.0.2 -- Removed deprecated environment variables, updated to go-sdk 1.0.7
 
 	DRIVER = "Docker-Volume"
 
@@ -58,17 +59,7 @@ const (
 	OptCloneSrc    = "cloneSrc"
 
 	// V2 Volume Plugin static mounts must be under /mnt
-	MountLoc       = "/mnt"
-	EnvFwk         = "DATERA_FRAMEWORK"
-	EnvSize        = "DATERA_VOL_SIZE"
-	EnvReplica     = "DATERA_REPLICAS"
-	EnvPlacement   = "DATERA_PLACEMENT"
-	EnvMaxiops     = "DATERA_MAX_IOPS"
-	EnvMaxbw       = "DATERA_MAX_BW"
-	EnvTemplate    = "DATERA_TEMPLATE"
-	EnvFstype      = "DATERA_FSTYPE"
-	EnvPersistence = "DATERA_PERSISTENCE"
-	EnvCloneSrc    = "DATERA_CLONE_SRC"
+	MountLoc = "/mnt"
 
 	// Misc
 	DeleteConst = "auto"

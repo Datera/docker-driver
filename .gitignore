@@ -34,3 +34,4 @@ dsdk
 dddbin
 *.log
 .reviewboardrc
+rootfs
