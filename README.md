@@ -93,8 +93,8 @@ Fill out the cluster info in the config file
 ```bash
 $ sudo ./dddbin
 ```
-PLEASE NOTE: If installing on a Mesos node, the environment variable
-`DATERA_FRAMEWORK="dcos-mesos"` or `DATERA_FRAMEWORK="dcos-docker"` must be set
+PLEASE NOTE: If installing on a Mesos node, the config variable
+`"framework": "dcos-mesos"` or `"framework": "dcos-docker"` must be set
 
 3a - Create a volume
 ```bash
@@ -152,24 +152,33 @@ sudo ./dddbin -config datera-config-template.txt
 
 #### For Docker Container nodes
 ```bash
-sudo env DATERA_FRAMEWORK=dcos DATERA_VOL_SIZE=33 ./dddbin -config datera-config-template.txt
+./dddbin -config datera-config-template.txt
 ```
-The following environment variables are available to use for Docker container nodes
-```bash
-DATERA_FRAMEWORK=dcos
-DATERA_VOL_SIZE=XX
-DATERA_REPLICAS=X
-DATERA_PLACEMENT=hybrid
-DATERA_MAX_IOPS=100
-DATERA_MAX_BW=100
-DATERA_FSTYPE=ext4
-DATERA_CLONE_SRC=some-app-instance
+The following json config keys are available to use for Docker container nodes
+```json
+{
+    "datera-cluster": "1.1.1.1",                    # Datera Cluster Mgmt IP
+    "username": "my-user",                          # Datera Account Username
+    "password": "my-pass",                          # Datera Account Password
+    "tenant": "/root",                              # Datera tenant ID
+    "os-user": "root",                              # Name of local user to run under
+    "ssl": true|false,                              # Use SSL for requests
+    "framework": "bare"|"dcos-mesos"|"dcos-docker"  # Framework being used
+    "volume": {
+        "size": 16,
+        "replica": 3,
+        "template": null,
+        "fstype": "ext4",
+        "maxiops": null,
+        "maxbw": null,
+        "placement": "hybrid",
+        "persistence": "manual",
+        "clone-src": null
+    }
+}
 ```
-PLEASE NOTE: These environment variables are necessary only for Docker
-containers and will be global for all Docker containers on each Mesos Agent
-node. Eg: if `DATERA_VOL_SIZE=100` is set on an Agent node EVERY SINGLE DOCKER
-CONTAINER USING DATERA STORAGE WILL USE THIS VALUE.  Mesos containers are
-unaffected
+PLEASE NOTE: Values provided under "volume" are for use by the dcos-docker
+containerizer only and will hold true for all containers created on the system
 
 ### Create a service with Datera storage
 #### Simple Mesos container setup
@@ -254,7 +263,7 @@ agent and cause the container spawn to fail
 #### For Docker containers
 You cannot specify any Datera specific information in this JSON blob due to a
 limitation in the way DCOS interacts with Mesos and Docker. The relevant
-options must be specified during driver instantiation time via the environment
+options must be specified during driver instantiation time via the config
 variables shown in an earlier section.
 ```json
 {

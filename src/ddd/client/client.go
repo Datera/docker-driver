@@ -43,11 +43,11 @@ type Config struct {
 type VolOpts struct {
 	Size          uint64 `json:"size,omitempty"`
 	Replica       uint64 `json:"replica,omitempty"`
-	Template      string `json:"placement,omitempty"`
-	FsType        string `json:"maxiops,omitempty"`
-	MaxIops       uint64 `json:"maxbw,omitempty"`
-	MaxBW         uint64 `json:"template,omitempty"`
-	PlacementMode string `json:"fstype,omitempty"`
+	Template      string `json:"template,omitempty"`
+	FsType        string `json:"fstype,omitempty"`
+	MaxIops       uint64 `json:"maxiops,omitempty"`
+	MaxBW         uint64 `json:"maxbw,omitempty"`
+	PlacementMode string `json:"placement,omitempty"`
 	Persistence   string `json:"persistence,omitempty"`
 	CloneSrc      string `json:"clone-src,omitempty"`
 }
