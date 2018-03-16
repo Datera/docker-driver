@@ -155,7 +155,7 @@ sudo ./dddbin -config datera-config-template.txt
 ./dddbin -config datera-config-template.txt
 ```
 The following json config keys are available to use for Docker container nodes
-```json
+```text
 {
     "datera-cluster": "1.1.1.1",                    # Datera Cluster Mgmt IP
     "username": "my-user",                          # Datera Account Username
