@@ -9,6 +9,12 @@ all:
 	env GOPATH=${GOPATH} go build -ldflags '-linkmode external -extldflags -static' -o ${BINNAME} ${DIRNAME}
 	env GOPATH=${GOPATH} go vet ${DIRNAME}
 
+check:
+	env GOPATH=${GOPATH} go get ${DIRNAME}
+	env GOPATH=${GOPATH} go build -o ${BINNAME} ${DIRNAME}
+	env GOPATH=${GOPATH} go vet ${DIRNAME}
+	rm ${BINNAME}
+
 linux:
 	rm -f -- dddbin
 	docker cp $(shell docker run -d -it --entrypoint "true" $(shell docker build --no-cache -t ${IMGNAME} . | pcregrep -o "Successfully built \K.*")):/go/docker-driver/dddbin .

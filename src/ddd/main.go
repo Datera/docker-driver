@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	dc "ddd/client"
@@ -45,6 +47,7 @@ var (
 	version   = flag.Bool("version", false, "Print version info")
 	config    = flag.String("config", "", "Config File Location")
 	genconfig = flag.String("genconfig", "", fmt.Sprintf("Generate Config Template. Options: 'bare', 'dcos-docker' and 'dcos-mesos'. Creates '%s' file", genConfigFile))
+	printopts = flag.Bool("print-opts", false, "Print --opt supported values")
 )
 
 func Usage() {
@@ -58,6 +61,30 @@ the '-genconfig' opt to generate a config
 file template in this directory
 `
 	fmt.Fprintf(os.Stderr, "%s", msg)
+}
+
+func PrintOpts() {
+	klong := 0
+	vlong := 0
+	keys := []string{}
+	for k, v := range dd.Opts {
+		keys = append(keys, k)
+		if len(k) > klong {
+			klong = len(k)
+		}
+		if len(v[0]) > vlong {
+			vlong = len(v[0])
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Printf("%s", k)
+		fmt.Printf("%s", strings.Repeat(" ", klong-len(k))+"  --  ")
+		fmt.Printf("%s", dd.Opts[k][0])
+		fmt.Printf("%s", strings.Repeat(" ", vlong-len(dd.Opts[k][0])))
+		fmt.Printf("%s", "  Default: ")
+		fmt.Printf("%s\n", dd.Opts[k][1])
+	}
 }
 
 func GenConfigBare() error {
@@ -129,6 +156,7 @@ func ParseConfig(file string) (*dc.Config, error) {
 	var conf dc.Config
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
+		fmt.Println(err)
 		return &conf, err
 	}
 	err = json.Unmarshal(data, &conf)
@@ -158,6 +186,11 @@ func main() {
 	flag.Parse()
 	if *version {
 		fmt.Printf("Version: %s\n", dd.DRIVER+"-"+dd.DriverVersion)
+		os.Exit(0)
+	}
+
+	if *printopts {
+		PrintOpts()
 		os.Exit(0)
 	}
 
@@ -195,10 +228,6 @@ func main() {
 	}
 
 	co.Debugf(ctxt, "Options: datera-cluster: %s, username: %s, password: %s", conf.DateraCluster, conf.Username, "*******")
-
-	// Overriding these so tests can replace them
-	co.OS = co.System{}
-	co.FileReader = ioutil.ReadFile
 
 	d := dd.NewDateraDriver(conf)
 	h := dv.NewHandler(d)

@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "2.0.2"
+	DriverVersion      = "2.0.3"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -44,6 +44,8 @@ const (
 	//			helper functions in util.go
 	// 2.0.1 -- Added /etc/iscsi as a rbind, rshared mount in the plugin config.json
 	// 2.0.2 -- Removed deprecated environment variables, updated to go-sdk 1.0.7
+	// 2.0.3 -- Removed unused tests, added -print-opts cli option, cleaned up
+	//          some clutter in util.go and added "make fast" to Makefile
 
 	DRIVER = "Docker-Volume"
 
@@ -64,6 +66,18 @@ const (
 	// Misc
 	DeleteConst = "auto"
 )
+
+var Opts = map[string][]string{
+	OptSize:        []string{"Volume Size In GiB", strconv.Itoa(DefaultSize)},
+	OptReplica:     []string{"Volume Replicas", strconv.Itoa(DefaultReplicas)},
+	OptTemplate:    []string{"Volume Template", "None"},
+	OptFstype:      []string{"Volume Filesystem", DefaultFS},
+	OptMaxiops:     []string{"Volume Max Total IOPS", "0"},
+	OptMaxbw:       []string{"Volume Max Total Bandwidth", "0"},
+	OptPlacement:   []string{"Volume Placement", DefaultPlacement},
+	OptPersistence: []string{"Volume Persistence", DefaultPersistence},
+	OptCloneSrc:    []string{"Volume Source For Clone", "None"},
+}
 
 // Need to require interface instead of DateraClient directly
 // so we can mock DateraClient out more easily

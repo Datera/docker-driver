@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -803,7 +804,7 @@ func stripName(name string) string {
 
 func getInitName(ctxt context.Context) (string, error) {
 	// Parse InitiatorName
-	dat, err := co.FileReader(initiatorFile)
+	dat, err := ioutil.ReadFile(initiatorFile)
 	if err != nil {
 		co.Debugf(ctxt, "Could not read file %s", initiatorFile)
 		return "", err

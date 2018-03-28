@@ -21,43 +21,9 @@ const (
 // Binding this to an exported function for
 // mocking purposes in tests
 var (
-	OS         ISystem
-	FileReader ReadFile
-	host, _    = os.Hostname()
-	topctxt    = context.WithValue(context.Background(), "host", host)
+	host, _ = os.Hostname()
+	topctxt = context.WithValue(context.Background(), "host", host)
 )
-
-// "OS" interface to allow for mocking purposes in tests
-// If more OS functions are needed, just add them to this interface
-// and the concrete implementation
-type ISystem interface {
-	Lstat(string) (os.FileInfo, error)
-	Stat(string) (os.FileInfo, error)
-	IsNotExist(error) bool
-	MkdirAll(string, os.FileMode) error
-}
-
-// Concrete OS impelmentation
-type System struct {
-}
-
-func (s System) Lstat(f string) (os.FileInfo, error) {
-	return os.Lstat(f)
-}
-
-func (s System) Stat(f string) (os.FileInfo, error) {
-	return os.Stat(f)
-}
-
-func (s System) IsNotExist(e error) bool {
-	return os.IsNotExist(e)
-}
-
-func (s System) MkdirAll(f string, o os.FileMode) error {
-	return os.MkdirAll(f, o)
-}
-
-type ReadFile func(f string) ([]byte, error)
 
 func PanicErr(err error) {
 	if err != nil {
@@ -161,6 +127,15 @@ func Warningf(ctxt context.Context, s string, args ...interface{}) {
 	}).Warningf(s, args...)
 }
 
+func Error(ctxt context.Context, s interface{}) {
+	reqname := ctxt.Value(ReqName).(string)
+	tid := ctxt.Value(TraceId).(string)
+	log.WithFields(log.Fields{
+		ReqName: reqname,
+		TraceId: tid,
+	}).Error(s)
+}
+
 func Errorf(ctxt context.Context, s string, args ...interface{}) {
 	checkArgs(ctxt, s, args...)
 	reqname := ctxt.Value(ReqName).(string)
@@ -169,15 +144,6 @@ func Errorf(ctxt context.Context, s string, args ...interface{}) {
 		ReqName: reqname,
 		TraceId: tid,
 	}).Errorf(s, args...)
-}
-
-func Error(ctxt context.Context, s interface{}) {
-	reqname := ctxt.Value(ReqName).(string)
-	tid := ctxt.Value(TraceId).(string)
-	log.WithFields(log.Fields{
-		ReqName: reqname,
-		TraceId: tid,
-	}).Error(s)
 }
 
 func Fatal(ctxt context.Context, s interface{}) {
