@@ -20,7 +20,7 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "2.0.3"
+	DriverVersion      = "2018.5.1.0"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -46,6 +46,7 @@ const (
 	// 2.0.2 -- Removed deprecated environment variables, updated to go-sdk 1.0.7
 	// 2.0.3 -- Removed unused tests, added -print-opts cli option, cleaned up
 	//          some clutter in util.go and added "make fast" to Makefile
+	// 2018.5.1.0 -- Switched to new date-based versioning scheme
 
 	DRIVER = "Docker-Volume"
 
