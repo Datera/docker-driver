@@ -22,9 +22,11 @@ This is a JSON file with the following structure:
     "os-user": "root"
 }
 ```
+NOTE: The specified tenant MUST be accessible by the user account provided.
+
 Run this on each node that should use the Datera volume driver
 ```bash
-$ sudo docker install dateraiodev/docker-driver
+$ sudo docker plugin install dateraiodev/docker-driver
 ```
 Update the config file with the relevant information for the cluster then
 run the following:
