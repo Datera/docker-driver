@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -61,7 +61,7 @@ func Tsprint(s string, m map[string]string) (string, error) {
 }
 
 func GenId() string {
-	return uuid.Must(uuid.NewV4()).String()
+	return uuid.Must(uuid.NewRandom()).String()
 }
 
 func MkCtxt(reqName string) context.Context {

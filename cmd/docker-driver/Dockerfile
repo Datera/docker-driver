@@ -13,16 +13,15 @@ RUN apk add --update \
     mkinitfs \
     python
 RUN mkdir docker-driver/
-COPY . docker-driver/
-
-RUN cd docker-driver && make clean && make
+ADD ddd /bin/
+ADD iscsi-send /bin/
+ADD iscsiadm /bin/
 
 RUN apk del alpine-sdk
 
 # Setup Volume Internal Mount Location
 RUN mkdir -p /var/lib/docker-volumes/_datera && \
     mkdir -p /run/docker/plugins && \
-    touch /run/docker/plugins/datera.sock \
-    /usr/sbin/iscsid
+    touch /run/docker/plugins/datera.sock
 
-ENTRYPOINT [ "/bin/sh", "-c", "/usr/sbin/iscsid; /go/docker-driver/dddbin | tee dddbin.log" ]
+CMD [ "/bin/sh", "-c", "/bin/ddd 2>&1 | tee /var/log/driver.log" ]
