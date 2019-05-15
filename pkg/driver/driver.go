@@ -179,15 +179,6 @@ func (d *DateraDriver) Create(r *dv.CreateRequest) error {
 
 	co.Debugf(ctxt, "Passed in volume opts: %s", co.Prettify(vOpts))
 
-	// Set values from environment variables if we're running inside
-	// DCOS.  This is only needed if running under Docker.  Running under
-	// Mesos unified containers allows passing these in normally
-	// if isDcosDocker(d.Conf) {
-	// 	d.setFromConf(ctxt, &vOpts)
-	// }
-
-	// setDefaults(ctxt, &vOpts)
-
 	vol, err := d.DateraClient.CreateVolume(r.Name, &vOpts, true)
 	if err != nil {
 		return err
@@ -253,12 +244,6 @@ func (d *DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 	defer d.Mutex.Unlock()
 	if _, err := d.DateraClient.GetVolume(r.Name, true, true); err == nil {
 		return &dv.GetResponse{Volume: &dv.Volume{Name: r.Name, Mountpoint: d.MountPoint(r.Name), Status: make(map[string]interface{}, 0)}}, nil
-		// else if isDcosDocker(d.Conf) {
-		// 	if err = doImplicitCreate(ctxt, d, r.Name, m); err != nil {
-		// 		return &dv.GetResponse{}, err
-		// 	}
-		// 	return &dv.GetResponse{Volume: &dv.Volume{Name: r.Name, Mountpoint: d.MountPoint(r.Name), Status: make(map[string]interface{}, 0)}}, nil
-		// } else {
 	} else {
 		return &dv.GetResponse{}, nil
 	}
@@ -307,7 +292,14 @@ func (d *DateraDriver) Unmount(r *dv.UnmountRequest) error {
 	if err := vol.Unmount(); err != nil {
 		co.Errorf(ctxt, "Unmount Error: %s", err)
 	}
-
+	init, err := d.DateraClient.CreateGetInitiator()
+	if err != nil {
+		co.Warning(ctxt, err)
+	}
+	err = vol.UnregisterAcl(init)
+	if err != nil {
+		co.Warning(ctxt, err)
+	}
 	return nil
 }
 
@@ -353,47 +345,8 @@ func setDefaults(ctxt context.Context, volOpts *dc.VolOpts) {
 		co.Debugf(ctxt, "Using default placement value of %s", DefaultPlacement)
 		volOpts.PlacementMode = DefaultPlacement
 	}
-	// // Set persistence to "manual"
-	// if volOpts.Persistence == "" {
-	// 	co.Debugf(ctxt, "Using default persistence value of %s", DefaultPersistence)
-	// 	volOpts.Persistence = DefaultPersistence
-	// }
 	co.Debugf(ctxt, "After setting defaults: size %d, fsType %s, replica %d, placementMode %s",
 		volOpts.Size, volOpts.FsType, volOpts.Replica, volOpts.PlacementMode)
-}
-
-// func (d *DateraDriver) setFromConf(ctxt context.Context, volOpts *dc.VolOpts) {
-// 	v := d.Conf.Volume
-// 	volOpts.Size = v.Size
-// 	volOpts.Replica = v.Replica
-// 	volOpts.Template = v.Template
-// 	volOpts.FsType = v.FsType
-// 	volOpts.MaxIops = v.MaxIops
-// 	volOpts.MaxBW = v.MaxBW
-// 	volOpts.PlacementMode = v.PlacementMode
-// 	volOpts.Persistence = v.Persistence
-// 	volOpts.CloneSrc = v.CloneSrc
-// 	co.Debugf(ctxt, "Reading values from Config: %#v", volOpts)
-// }
-
-func doImplicitCreate(ctxt context.Context, d *DateraDriver, name, m string) error {
-	// We need to create this implicitly since DCOS doesn't support full
-	// volume lifecycle management via Docker
-	volOpts := &dc.VolOpts{}
-	// d.setFromConf(ctxt, &volOpts)
-	setDefaults(ctxt, volOpts)
-
-	// d.Volumes[m] = co.UpsertVolObj(name, volOpts.FsType, 0, volOpts.Persistence)
-
-	// volObj, ok := d.Volumes[m]
-	// co.Debugf(ctxt, "volObj: %s, ok: %d", volObj, ok)
-
-	co.Debugf(ctxt, "Sending DCOS IMPLICIT create-volume to datera server.")
-	_, err := d.DateraClient.CreateVolume(name, volOpts, true)
-
-	co.Debugf(ctxt, "Mounting implict volume: %s", name)
-	err = doMount(ctxt, d, name, DefaultPersistence, DefaultFS)
-	return err
 }
 
 func doMount(ctxt context.Context, d *DateraDriver, name, pmode, fs string) error {
@@ -402,6 +355,13 @@ func doMount(ctxt context.Context, d *DateraDriver, name, pmode, fs string) erro
 	if err != nil {
 		co.Debugf(ctxt, "Couldn't find volume with name: %s", name)
 		return nil
+	}
+	init, err := d.DateraClient.CreateGetInitiator()
+	if err != nil {
+		return err
+	}
+	if err = vol.RegisterAcl(init); err != nil {
+		return err
 	}
 	// TODO: Fix multipath support post-refactor
 	if err := vol.Login(false, false); err != nil {
