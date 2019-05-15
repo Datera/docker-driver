@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"os/user"
 	"strconv"
-	"time"
 
 	co "github.com/Datera/docker-driver/pkg/common"
 	dd "github.com/Datera/docker-driver/pkg/driver"
@@ -64,7 +64,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	ctxt := co.MkCtxt("Main")
+	ctxt := context.WithValue(context.Background(), co.TraceId, co.GenId())
+	ctxt = context.WithValue(ctxt, co.ReqName, "Main")
 
 	conf, err := udc.GetConfig()
 	if err != nil {
@@ -74,7 +75,7 @@ func main() {
 	udc.PrintConfig()
 
 	d := dd.NewDateraDriver(conf)
-	h := dv.NewHandler(d)
+	h := dv.NewHandler(&d)
 	u, err := user.Current()
 	if err != nil {
 		co.Errorf(ctxt, "Could not look up GID for user %s", u)
@@ -85,11 +86,11 @@ func main() {
 		co.Errorf(ctxt, "Could not convert gid to int: %s", u.Gid)
 		os.Exit(3)
 	}
-	// Start log daemon process after an initial sleep
-	go func() {
-		time.Sleep(120 * time.Second)
-		co.LogUploadDaemon(conf.MgmtIp, conf.Username, conf.Password, "datera-ddd.bin", 60)
-	}()
+	// // Start log daemon process after an initial sleep
+	// go func() {
+	// 	time.Sleep(120 * time.Second)
+	// 	co.LogUploadDaemon(conf.MgmtIp, conf.Username, conf.Password, "datera-ddd.bin", 60)
+	// }()
 
 	co.Debugf(ctxt, "listening on %s.sock\n", sockName)
 	co.Debug(ctxt, h.ServeUnix(sockName, gid))

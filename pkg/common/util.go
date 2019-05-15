@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"os/exec"
 	"strings"
 	"text/template"
@@ -16,13 +15,6 @@ import (
 const (
 	ReqName = "req"
 	TraceId = "tid"
-)
-
-// Binding this to an exported function for
-// mocking purposes in tests
-var (
-	host, _ = os.Hostname()
-	topctxt = context.WithValue(context.Background(), "host", host)
 )
 
 func PanicErr(err error) {
@@ -62,12 +54,6 @@ func Tsprint(s string, m map[string]string) (string, error) {
 
 func GenId() string {
 	return uuid.Must(uuid.NewRandom()).String()
-}
-
-func MkCtxt(reqName string) context.Context {
-	ctxt := context.WithValue(topctxt, TraceId, GenId())
-	ctxt = context.WithValue(ctxt, ReqName, reqName)
-	return ctxt
 }
 
 func Debug(ctxt context.Context, s interface{}) {

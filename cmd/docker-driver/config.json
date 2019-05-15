@@ -2,7 +2,7 @@
     "description": "Datera Docker Plugin",
     "documentation": "https://github.com/Datera/docker-driver",
     "entrypoint": [
-        "/go/docker-driver/run_driver.sh"
+        "/bin/sh", "-c", "/bin/ddd 2>&1 | tee /var/log/driver.log"
     ],
     "network": {
            "type": "host"
@@ -24,8 +24,8 @@
             "options": ["rbind", "rshared"]
         },
         {
-            "source": "/root",
-            "destination": "/root",
+            "source": "/etc/datera/",
+            "destination": "/etc/datera",
             "type": "bind",
             "options": ["rbind", "rshared"]
         },
@@ -38,6 +38,12 @@
         {
             "source": "/etc/iscsi",
             "destination": "/etc/iscsi",
+            "type": "bind",
+            "options": ["rbind", "rshared"]
+        },
+        {
+            "source": "/var/datera/csi-iscsi.sock",
+            "destination": "/iscsi-socket/iscsi.sock",
             "type": "bind",
             "options": ["rbind", "rshared"]
         }

@@ -3,6 +3,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,7 +23,9 @@ const (
 	DefaultReplicas    = 3
 	DefaultPlacement   = "hybrid"
 	DefaultPersistence = "manual"
-	DriverVersion      = "2019.5.10.0"
+	DriverVersion      = "unset"
+	SdkVersion         = "unset"
+	Githash            = "unset"
 	// Driver Version History
 	// 1.0.3 -- Major revamp to become /v2 docker plugin framework compatible
 	// 1.0.4 -- Adding QoS and PlacementMode volume options
@@ -72,17 +75,21 @@ const (
 	DeleteConst = "auto"
 )
 
-var Opts = map[string][]string{
-	OptSize:        []string{"Volume Size In GiB", strconv.Itoa(DefaultSize)},
-	OptReplica:     []string{"Volume Replicas", strconv.Itoa(DefaultReplicas)},
-	OptTemplate:    []string{"Volume Template", "None"},
-	OptFstype:      []string{"Volume Filesystem", DefaultFS},
-	OptMaxiops:     []string{"Volume Max Total IOPS", "0"},
-	OptMaxbw:       []string{"Volume Max Total Bandwidth", "0"},
-	OptPlacement:   []string{"Volume Placement", DefaultPlacement},
-	OptPersistence: []string{"Volume Persistence", DefaultPersistence},
-	OptCloneSrc:    []string{"Volume Source For Clone", "None"},
-}
+var (
+	Opts = map[string][]string{
+		OptSize:        []string{"Volume Size In GiB", strconv.Itoa(DefaultSize)},
+		OptReplica:     []string{"Volume Replicas", strconv.Itoa(DefaultReplicas)},
+		OptTemplate:    []string{"Volume Template", "None"},
+		OptFstype:      []string{"Volume Filesystem", DefaultFS},
+		OptMaxiops:     []string{"Volume Max Total IOPS", "0"},
+		OptMaxbw:       []string{"Volume Max Total Bandwidth", "0"},
+		OptPlacement:   []string{"Volume Placement", DefaultPlacement},
+		OptPersistence: []string{"Volume Persistence", DefaultPersistence},
+		OptCloneSrc:    []string{"Volume Source For Clone", "None"},
+	}
+	topctxt = context.WithValue(context.Background(), "host", host)
+	host, _ = os.Hostname()
+)
 
 type DateraDriver struct {
 	DateraClient *dc.DateraClient
@@ -98,13 +105,14 @@ func NewDateraDriver(conf *udc.UDC) DateraDriver {
 		Version: DriverVersion,
 		Debug:   true,
 	}
-	ctxt := co.MkCtxt("NewDateraDriver")
-	co.Debugf(ctxt, "Creating DateraClient object with restAddress: %s", conf.MgmtIp)
-	client, err := dc.NewDateraClient(conf, true, fmt.Sprintf("docker-driver-%s", DriverVersion))
+	v := fmt.Sprintf("docker-driver-%s-%s-gosdk-%s", DriverVersion, Githash, SdkVersion)
+	client, err := dc.NewDateraClient(conf, true, v)
 	if err != nil {
 		panic(err)
 	}
 	d.DateraClient = client
+	ctxt := d.initFunc("NewDateraDriver")
+	co.Debugf(ctxt, "Creating DateraClient object with restAddress: %s", conf.MgmtIp)
 	co.Debugf(ctxt, "DateraDriver: %#v", d)
 	co.Debugf(ctxt, "Driver Version: %s", d.Version)
 	return d
@@ -124,8 +132,8 @@ func NewDateraDriver(conf *udc.UDC) DateraDriver {
 //  placementMode -- Default: hybrid
 //  persistenceMode -- Default: manual
 //  cloneSrc
-func (d DateraDriver) Create(r *dv.CreateRequest) error {
-	ctxt := co.MkCtxt("Create")
+func (d *DateraDriver) Create(r *dv.CreateRequest) error {
+	ctxt := d.initFunc("Create")
 	co.Debugf(ctxt, "DateraDriver.Create: %#v", r)
 	co.Debugf(ctxt, "Creating volume %s\n", r.Name)
 	d.Mutex.Lock()
@@ -166,6 +174,7 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 		CloneSrc:          cloneSrc,
 		TotalIopsMax:      int(maxIops),
 		TotalBandwidthMax: int(maxBW),
+		IpPool:            "default",
 	}
 
 	co.Debugf(ctxt, "Passed in volume opts: %s", co.Prettify(vOpts))
@@ -191,8 +200,8 @@ func (d DateraDriver) Create(r *dv.CreateRequest) error {
 	return nil
 }
 
-func (d DateraDriver) Remove(r *dv.RemoveRequest) error {
-	ctxt := co.MkCtxt("Remove")
+func (d *DateraDriver) Remove(r *dv.RemoveRequest) error {
+	ctxt := d.initFunc("Remove")
 	co.Debugf(ctxt, "DateraDriver.Remove: %#v", r)
 	co.Debugf(ctxt, "Removing volume %s", r.Name)
 	d.Mutex.Lock()
@@ -218,8 +227,8 @@ func (d DateraDriver) Remove(r *dv.RemoveRequest) error {
 	return nil
 }
 
-func (d DateraDriver) List() (*dv.ListResponse, error) {
-	ctxt := co.MkCtxt("List")
+func (d *DateraDriver) List() (*dv.ListResponse, error) {
+	ctxt := d.initFunc("List")
 	co.Debugf(ctxt, "DateraDriver.List")
 	co.Debugf(ctxt, "Listing volumes")
 	d.Mutex.Lock()
@@ -236,8 +245,8 @@ func (d DateraDriver) List() (*dv.ListResponse, error) {
 	return &dv.ListResponse{Volumes: vols}, nil
 }
 
-func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
-	ctxt := co.MkCtxt("Get")
+func (d *DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
+	ctxt := d.initFunc("Get")
 	co.Debugf(ctxt, "DateraDriver.Get: %#v", r)
 	co.Debugf(ctxt, "Get volume: %s", r.Name)
 	d.Mutex.Lock()
@@ -255,14 +264,14 @@ func (d DateraDriver) Get(r *dv.GetRequest) (*dv.GetResponse, error) {
 	}
 }
 
-func (d DateraDriver) Path(r *dv.PathRequest) (*dv.PathResponse, error) {
-	ctxt := co.MkCtxt("Path")
+func (d *DateraDriver) Path(r *dv.PathRequest) (*dv.PathResponse, error) {
+	ctxt := d.initFunc("Path")
 	co.Debugf(ctxt, "DateraDriver.Path")
 	return &dv.PathResponse{Mountpoint: d.MountPoint(r.Name)}, nil
 }
 
-func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
-	ctxt := co.MkCtxt("Mount")
+func (d *DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
+	ctxt := d.initFunc("Mount")
 	co.Debugf(ctxt, "DateraDriver.Mount: %#v", r)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -282,8 +291,8 @@ func (d DateraDriver) Mount(r *dv.MountRequest) (*dv.MountResponse, error) {
 	return &dv.MountResponse{Mountpoint: m}, nil
 }
 
-func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
-	ctxt := co.MkCtxt("Unmount")
+func (d *DateraDriver) Unmount(r *dv.UnmountRequest) error {
+	ctxt := d.initFunc("Unmount")
 	co.Debugf(ctxt, "DateraDriver.Unmount: %#v", r)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
@@ -302,16 +311,23 @@ func (d DateraDriver) Unmount(r *dv.UnmountRequest) error {
 	return nil
 }
 
-func (d DateraDriver) Capabilities() *dv.CapabilitiesResponse {
-	ctxt := co.MkCtxt("Capabilities")
+func (d *DateraDriver) Capabilities() *dv.CapabilitiesResponse {
+	ctxt := d.initFunc("Capabilities")
 	co.Debugf(ctxt, "DateraDriver.Capabilities")
 	// This driver is global scope since created volumes are not bound to the
 	// engine that created them.
 	return &dv.CapabilitiesResponse{Capabilities: dv.Capability{Scope: "global"}}
 }
 
-func (d DateraDriver) MountPoint(name string) string {
+func (d *DateraDriver) MountPoint(name string) string {
 	return filepath.Join(MountLoc, name)
+}
+
+func (d *DateraDriver) initFunc(reqName string) context.Context {
+	ctxt := context.WithValue(topctxt, co.TraceId, co.GenId())
+	ctxt = context.WithValue(ctxt, co.ReqName, reqName)
+	ctxt = d.DateraClient.WithContext(ctxt)
+	return ctxt
 }
 
 func setDefaults(ctxt context.Context, volOpts *dc.VolOpts) {
@@ -360,7 +376,7 @@ func setDefaults(ctxt context.Context, volOpts *dc.VolOpts) {
 // 	co.Debugf(ctxt, "Reading values from Config: %#v", volOpts)
 // }
 
-func doImplicitCreate(ctxt context.Context, d DateraDriver, name, m string) error {
+func doImplicitCreate(ctxt context.Context, d *DateraDriver, name, m string) error {
 	// We need to create this implicitly since DCOS doesn't support full
 	// volume lifecycle management via Docker
 	volOpts := &dc.VolOpts{}
@@ -380,7 +396,7 @@ func doImplicitCreate(ctxt context.Context, d DateraDriver, name, m string) erro
 	return err
 }
 
-func doMount(ctxt context.Context, d DateraDriver, name, pmode, fs string) error {
+func doMount(ctxt context.Context, d *DateraDriver, name, pmode, fs string) error {
 	m := d.MountPoint(name)
 	vol, err := d.DateraClient.GetVolume(name, true, true)
 	if err != nil {

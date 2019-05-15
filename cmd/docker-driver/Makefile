@@ -12,7 +12,7 @@ compile: iscsi-rpc
 	@echo "==> docker-driver version ${VERSION}-${GITHASH}"
 	@echo "==> go-sdk version ${GOSDK_V}"
 	@env go get -d ./...
-	@env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags 'osusergo netgo static_build' -o ${NAME} -ldflags "-X 'github.com/Datera/datera-csi/pkg/driver.Version=${VERSION}' -X 'github.com/Datera/datera-csi/pkg/driver.SdkVersion=${GOSDK_V}' -X 'github.com/Datera/datera-csi/pkg/driver.Githash=${GITHASH}'" github.com/Datera/datera-csi/cmd/dat-csi-plugin
+	@env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags 'osusergo netgo static_build' -o ${NAME} -ldflags "-X 'github.com/Datera/docker-driver/pkg/driver.DriverVersion=${VERSION}' -X 'github.com/Datera/docker-driver/pkg/driver.SdkVersion=${GOSDK_V}' -X 'github.com/Datera/docker-driver/pkg/driver.Githash=${GITHASH}'" github.com/Datera/docker-driver/cmd/docker-driver
 	@env go vet ./...
 
 iscsi-rpc:
@@ -23,7 +23,8 @@ iscsi-rpc:
 	@env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags 'osusergo netgo static_build' -o iscsi-recv github.com/Datera/datera-csi/cmd/iscsi-recv
 	@env go vet ./...
 
-plugin: compile
+plugin: clean compile
+	docker plugin rm ${REPONAME}/${IMGNAME} || true
 	docker build -t ${IMGNAME} .
 	mkdir -p rootfs
 	docker export `docker create ${IMGNAME} true` | ${TAR} -x -C rootfs 2>/dev/null
@@ -36,14 +37,6 @@ clean:
 	rm -f -- iscsi-recv
 	rm -f -- iscsi-send
 	rm -rf -- rootfs
-
-test:
-	go get ${DIRNAME}
-	go get github.com/stretchr/testify/mock
-	go get github.com/stretchr/testify/assert
-	go build -o ${BINNAME} ${DIRNAME}
-	go vet ${DIRNAME}
-	go test -v ${DIRNAME}
 
 fmt:
 	go fmt ${DIRNAME}
