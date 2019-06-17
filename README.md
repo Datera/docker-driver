@@ -2,27 +2,31 @@
 
 This plugin uses Datera storage backend as distributed data storage for containers.
 
-There are two ways to use this plugin
-
 ## Easy Installation (Docker v1.13+ required)
 
-Before enabling the plugin, create the configuration file on each node
+Before enabling the plugin, create the UDC configuration file on each node
 ```bash
-$ sudo touch /root/.datera-config-file
+$ sudo touch /etc/datera/datera-config.json
 ```
 This is a JSON file with the following structure:
 ```json
 {
-    "datera-cluster": "1.1.1.1",
-    "username": "my-user",
-    "password": "my-pass",
-    "debug": false,
-    "ssl": true,
-    "tenant": "/root",
-    "os-user": "root"
+      "mgmt_ip": "1.1.1.1",
+      "username": "admin",
+      "password": "password",
+      "tenant": "/root",
+      "api_version": "2.2",
+      "ldap": ""
 }
 ```
 NOTE: The specified tenant MUST be accessible by the user account provided.
+
+Install the iscsi-recv binary on all nodes
+```bash
+$ ./ddct install -u k8s_csi_iscsi
+```
+See http://github.com/Datera/ddct for instructions on how to download and
+install ddct
 
 Run this on each node that should use the Datera volume driver
 ```bash
@@ -32,11 +36,6 @@ Update the config file with the relevant information for the cluster then
 run the following:
 ```bash
 $ sudo docker plugin enable dateraiodev/docker-driver
-```
-
-Install udev rules on each docker node (from the scripts directory)
-```bash
-sudo ./install_udev_rules.py
 ```
 
 ### Usage
@@ -53,7 +52,7 @@ Start your docker containers with the option `--volume-driver=dateraiodev/docker
 $ sudo docker run --volume-driver dateraiodev/docker-driver --volume datastore:/data alpine touch /data/hello
 ```
 
-## The Other Way (required for Mesos installations, but also works for Docker)
+## The Other Way (DEPRECATED, required for Mesos installations)
 
 ### Installation
 
